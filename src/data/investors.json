@@ -1,0 +1,1487 @@
+{
+  "dashboard": {
+    "header": {
+      "title": "Dashboard",
+      "subtitle": "Your investment portfolio overview"
+    },
+    "overviewCards": [
+      {
+        "id": "total-portfolio",
+        "label": "Total Portfolio",
+        "value": "$482,500",
+        "change": "+2.4% this month",
+        "changeColor": "#10B981",
+        "icon": "Building2",
+        "iconColor": "#1E3A5F",
+        "iconBgColor": "#EFF6FF"
+      },
+      {
+        "id": "total-investments",
+        "label": "Total Investments",
+        "value": "$450,000",
+        "subtext": "Across 12 properties & funds",
+        "icon": "Coins",
+        "iconColor": "#1E3A5F",
+        "iconBgColor": "#EFF6FF"
+      },
+      {
+        "id": "interest-earned",
+        "label": "Interest Earned",
+        "value": "$32,500",
+        "valueColor": "#10B981",
+        "subtext": "YTD",
+        "icon": "TrendingUp",
+        "iconColor": "#1E3A5F",
+        "iconBgColor": "#EFF6FF"
+      },
+      {
+        "id": "depreciation-annual",
+        "label": "Depreciation (Annual)",
+        "value": "$18,400",
+        "valueColor": "#1E3A5F",
+        "subtext": "Tax Year 2024",
+        "icon": "DollarSign",
+        "iconColor": "#1E3A5F",
+        "iconBgColor": "#EFF6FF"
+      },
+      {
+        "id": "depreciation-total",
+        "label": "Depreciation (Total)",
+        "value": "$42,150",
+        "subtext": "All Time",
+        "icon": "Clock",
+        "iconColor": "#1E3A5F",
+        "iconBgColor": "#EFF6FF"
+      },
+      {
+        "id": "tax-efficient-return",
+        "label": "Tax-Efficient Return",
+        "value": "8.4%",
+        "valueColor": "#1E3A5F",
+        "subtext": "After depreciation",
+        "icon": "Percent",
+        "iconColor": "#1E3A5F",
+        "iconBgColor": "#EFF6FF"
+      }
+    ],
+    "propertyInvestments": {
+      "title": "Property Investments",
+      "items": [
+        {
+          "id": "PCIG-2024-001",
+          "name": "1240 Oak Street",
+          "details": "PCIG-2024-001 • 3 wrc 5.0%",
+          "status": "Active",
+          "statusColor": "#166534",
+          "statusBgColor": "#DCFCE7",
+          "currentValue": "$25,000",
+          "interest": "+$1,200 Int.",
+          "interestColor": "#10B981",
+          "depreciation": "$850 Depr.",
+          "depreciationColor": "#1E3A5F"
+        },
+        {
+          "id": "PCIG-2023-142",
+          "name": "8500 Sunset Blvd",
+          "details": "PCIG-2023-142 • 3 wrc 2.5%",
+          "status": "Active",
+          "statusColor": "#166534",
+          "statusBgColor": "#DCFCE7",
+          "currentValue": "$12,500",
+          "interest": "+$800 Int.",
+          "interestColor": "#10B981",
+          "depreciation": "$425 Depr.",
+          "depreciationColor": "#1E3A5F"
+        },
+        {
+          "id": "PCIG-2023-089",
+          "name": "42 Pine Road",
+          "details": "PCIG-2023-089 • 3 wrc 10.0%",
+          "status": "Pending",
+          "statusColor": "#92400E",
+          "statusBgColor": "#FEF3C7",
+          "currentValue": "$50,000",
+          "interest": "$0 Int.",
+          "interestColor": "#10B981",
+          "depreciation": "$0 Depr.",
+          "depreciationColor": "#1E3A5F"
+        }
+      ]
+    },
+    "fundInvestments": {
+      "title": "Fund Investments",
+      "items": [
+        {
+          "id": "TDRF-2023",
+          "name": "Tax Deed Redemption Fund I (TDRF-2023)",
+          "details": "Units: 500 • IRR: 14.2%",
+          "currentValue": "$50,000",
+          "returns": "+$7,100 Rtn",
+          "returnsColor": "#10B981",
+          "depreciation": "$2,100 Depr",
+          "depreciationColor": "#1E3A5F"
+        },
+        {
+          "id": "ADF-2024",
+          "name": "Auction Opportunity Fund (ADF-2024)",
+          "details": "Units: 250 • IRR: 12.5%",
+          "currentValue": "$25,000",
+          "returns": "+$3,125 Rtn",
+          "returnsColor": "#10B981",
+          "depreciation": "$1,250 Depr.",
+          "depreciationColor": "#1E3A5F"
+        }
+      ],
+      "viewMoreText": "View 2 more funds..."
+    },
+    "depreciationBreakdown": {
+      "title": "Depreciation Breakdown",
+      "subtitle": "Tax year 2024 allocations.",
+      "tabs": [
+        "By Property",
+        "By Fund",
+        "Export"
+      ],
+      "defaultTab": "By Property",
+      "columns": [
+        "Property",
+        "Annual Depreciation",
+        "Cumulative Depreciation",
+        "Ownership %",
+        "Tax Year",
+        "Actions"
+      ],
+      "rows": [
+        {
+          "property": "1240 Oak Street",
+          "propertyId": "PCIG-2024-001",
+          "annualDepreciation": "$850.00",
+          "cumulativeDepreciation": "$1,250.00",
+          "ownership": "5.0%",
+          "taxYear": "2024",
+          "actionText": "View Details"
+        },
+        {
+          "property": "8500 Sunset Blvd",
+          "propertyId": "PCIG-2023-142",
+          "annualDepreciation": "$425.00",
+          "cumulativeDepreciation": "$850.00",
+          "ownership": "2.5%",
+          "taxYear": "2024",
+          "actionText": "View Details"
+        },
+        {
+          "property": "Tax Deed Redemption Fund I",
+          "propertyId": "Fund Alloc.",
+          "annualDepreciation": "$2,100.00",
+          "cumulativeDepreciation": "$4,200.00",
+          "ownership": "--",
+          "taxYear": "2024",
+          "actionText": "View Details"
+        }
+      ]
+    },
+    "returnsSummary": {
+      "title": "Returns Summary",
+      "items": [
+        {
+          "id": "pre-tax-returns",
+          "label": "Pre-Tax Returns",
+          "value": "$32,500",
+          "valueColor": "#0F172A",
+          "description": "Gross returns before depreciation"
+        },
+        {
+          "id": "depreciation-benefit",
+          "label": "Depreciation Benefit",
+          "value": "$18,400",
+          "valueColor": "#1E3A5F",
+          "description": "Tax shelter value"
+        },
+        {
+          "id": "after-tax-returns",
+          "label": "After-Tax Returns",
+          "value": "$14,100",
+          "valueColor": "#10B981",
+          "description": "Tax-efficient return (Net)",
+          "formula": "Pre-Tax - Depr = After-Tax"
+        }
+      ]
+    },
+    "recentTransactions": {
+      "title": "Recent Transactions",
+      "items": [
+        {
+          "id": "txn-1",
+          "type": "Deposit Received",
+          "icon": "ArrowDown",
+          "iconBgColor": "#DCFCE7",
+          "iconColor": "#10B981",
+          "details": "Via Wire Transfer • Oct 24, 2024",
+          "amount": "+$25,000.00",
+          "amountColor": "#10B981",
+          "status": "Completed",
+          "statusBgColor": "#DCFCE7",
+          "statusColor": "#166534"
+        },
+        {
+          "id": "txn-2",
+          "type": "Fund Distribution",
+          "icon": "TrendingUp",
+          "iconBgColor": "#EFF6FF",
+          "iconColor": "#1E3A5F",
+          "details": "Tax Deed Redemption Fund I • Oct 15, 2024",
+          "amount": "+$1,250.00",
+          "amountColor": "#10B981",
+          "status": "Completed",
+          "statusBgColor": "#DCFCE7",
+          "statusColor": "#166534"
+        },
+        {
+          "id": "txn-3",
+          "type": "Investment Purchase",
+          "icon": "Building2",
+          "iconBgColor": "#FEF3C7",
+          "iconColor": "#92400E",
+          "details": "1240 Oak Street (5% Share) • Oct 01, 2024",
+          "amount": "-$25,000.00",
+          "amountColor": "#DC2626",
+          "status": "Completed",
+          "statusBgColor": "#DCFCE7",
+          "statusColor": "#166534"
+        }
+      ]
+    },
+    "quickActions": {
+      "title": "Quick Actions",
+      "items": [
+        {
+          "id": "make-deposit",
+          "text": "Make a Deposit",
+          "type": "primary"
+        },
+        {
+          "id": "browse-properties",
+          "text": "Browse Properties",
+          "type": "secondary"
+        },
+        {
+          "id": "browse-funds",
+          "text": "Browse Funds",
+          "type": "secondary"
+        },
+        {
+          "id": "view-documents",
+          "text": "View Documents",
+          "type": "secondary"
+        },
+        {
+          "id": "tax-documents",
+          "text": "Tax Documents",
+          "type": "secondary"
+        }
+      ]
+    },
+    "portfolioPerformance": {
+      "title": "Portfolio Performance",
+      "periods": [
+        "1M",
+        "3M",
+        "6M",
+        "1Y",
+        "All"
+      ],
+      "defaultPeriod": "1M",
+      "legend": [
+        {
+          "label": "Portfolio Value",
+          "color": "#1E3A5F",
+          "style": "solid"
+        },
+        {
+          "label": "Depreciation",
+          "color": "#64748B",
+          "style": "dashed"
+        }
+      ],
+      "yAxisLabels": [
+        "$500K",
+        "$400K",
+        "$300K",
+        "$200K",
+        "$100K",
+        "$0"
+      ]
+    }
+  },
+  "investYourCapital": {
+    "title": "Invest your capital your way:",
+    "subtitle": "Choose how you want to invest.",
+    "options": [
+      {
+        "id": "individual-properties",
+        "title": "Invest in Individual Properties",
+        "description": "Hand-select liens, deeds, and REO opportunities.",
+        "buttonText": "Browse Properties",
+        "buttonType": "primary",
+        "icon": "Building2"
+      },
+      {
+        "id": "diversified-funds",
+        "title": "Invest in Diversified Funds",
+        "description": "Target IRR with multi-year lock-up, fully managed.",
+        "buttonText": "Browse Funds",
+        "buttonType": "secondary",
+        "icon": "Clock"
+      }
+    ]
+  },
+  "properties": {
+    "title": "Properties",
+    "subtitle": "Browse tax deed and lien investment opportunities.",
+    "searchPlaceholder": "Search by address, parcel ID, PCIG ID...",
+    "filters": [
+      "All",
+      "FIFA",
+      "Auction",
+      "Redeemed",
+      "Barment",
+      "QT",
+      "REO"
+    ],
+    "defaultFilter": "All",
+    "sortOptions": [
+      "Newest",
+      "Oldest",
+      "Interest Rate",
+      "Value",
+      "Deadline"
+    ],
+    "defaultSort": "Newest",
+    "viewOptions": [
+      "grid",
+      "list"
+    ],
+    "defaultView": "grid",
+    "pagination": {
+      "itemsPerPage": 12,
+      "currentPage": 1,
+      "totalPages": 4
+    },
+    "count": {
+      "showing": "1-12",
+      "total": 48
+    },
+    "items": [
+      {
+        "id": "PCIG-2024-001",
+        "address": "1240 Oakwood Ave",
+        "location": "Miami-Dade County, FL",
+        "tag": "FIFA",
+        "tagColor": "#1E3A5F",
+        "deadline": "45 days",
+        "deadlineColor": "#10B981",
+        "interestRate": "12.5%",
+        "payoffToday": "$125,000",
+        "minInvest": "$5,000",
+        "status": "active",
+        "buttons": [
+          {
+            "text": "Details",
+            "type": "outline"
+          },
+          {
+            "text": "Invest",
+            "type": "primary"
+          }
+        ]
+      },
+      {
+        "id": "PCIG-2024-045",
+        "address": "852 Pine Street",
+        "location": "Harris County, TX",
+        "tag": "Auction",
+        "tagColor": "#F59E0B",
+        "deadline": "12 days",
+        "deadlineColor": "#DC2626",
+        "interestRate": "10.5%",
+        "payoffToday": "$82,400",
+        "minInvest": "$2,500",
+        "status": "active",
+        "buttons": [
+          {
+            "text": "Details",
+            "type": "outline"
+          },
+          {
+            "text": "Invest",
+            "type": "primary"
+          }
+        ]
+      },
+      {
+        "id": "PCIG-2023-892",
+        "address": "3390 Maple Drive",
+        "location": "Fulton County, GA",
+        "tag": "Redeemed",
+        "tagColor": "#10B981",
+        "redeemedOn": "Oct 12, 2023",
+        "roi": "14.2%",
+        "finalPayoff": "$142,800",
+        "duration": "8 mo",
+        "status": "redeemed",
+        "buttons": [
+          {
+            "text": "View Statement",
+            "type": "outline"
+          }
+        ]
+      },
+      {
+        "id": "PCIG-2024-112",
+        "address": "772 Ocean Blvd",
+        "location": "Duval County, FL",
+        "tag": "FIFA",
+        "tagColor": "#1E3A5F",
+        "deadline": "180 days",
+        "deadlineColor": "#10B981",
+        "interestRate": "12.0%",
+        "payoffToday": "$210,000",
+        "minInvest": "$10,000",
+        "status": "active",
+        "buttons": [
+          {
+            "text": "Details",
+            "type": "outline"
+          },
+          {
+            "text": "Invest",
+            "type": "primary"
+          }
+        ]
+      },
+      {
+        "id": "PCIG-2024-055",
+        "address": "4501 Elm Avenue",
+        "location": "Dallas County, TX",
+        "tag": "QT",
+        "tagColor": "#7C3AED",
+        "processStage": "Filing",
+        "legalCost": "~$2,500",
+        "estValue": "$350,000",
+        "minInvest": "$15,000",
+        "status": "active",
+        "buttons": [
+          {
+            "text": "Details",
+            "type": "outline"
+          },
+          {
+            "text": "Invest",
+            "type": "primary"
+          }
+        ]
+      },
+      {
+        "id": "PCIG-2024-008",
+        "address": "902 Highland Park",
+        "location": "Bexar County, TX",
+        "tag": "Barment",
+        "tagColor": "#DC2626",
+        "statusLabel": "Blocked",
+        "interestRate": "11.0%",
+        "holdValue": "$45,000",
+        "resolution": "Pending",
+        "status": "active",
+        "buttons": [
+          {
+            "text": "View Status",
+            "type": "outline"
+          }
+        ]
+      },
+      {
+        "id": "PCIG-2024-023",
+        "address": "1245 Main Street",
+        "location": "Broward County, FL",
+        "tag": "FIFA",
+        "tagColor": "#1E3A5F",
+        "deadline": "60 days",
+        "deadlineColor": "#10B981",
+        "interestRate": "13.0%",
+        "payoffToday": "$95,000",
+        "minInvest": "$4,000",
+        "status": "active",
+        "buttons": [
+          {
+            "text": "Details",
+            "type": "outline"
+          },
+          {
+            "text": "Invest",
+            "type": "primary"
+          }
+        ]
+      },
+      {
+        "id": "PCIG-2024-067",
+        "address": "6789 Commerce Way",
+        "location": "Orange County, FL",
+        "tag": "Auction",
+        "tagColor": "#F59E0B",
+        "deadline": "8 days",
+        "deadlineColor": "#DC2626",
+        "interestRate": "11.5%",
+        "payoffToday": "$67,500",
+        "minInvest": "$3,000",
+        "status": "active",
+        "buttons": [
+          {
+            "text": "Details",
+            "type": "outline"
+          },
+          {
+            "text": "Invest",
+            "type": "primary"
+          }
+        ]
+      },
+      {
+        "id": "PCIG-2023-756",
+        "address": "4455 Riverside Blvd",
+        "location": "Palm Beach County, FL",
+        "tag": "Redeemed",
+        "tagColor": "#10B981",
+        "redeemedOn": "Sep 28, 2023",
+        "roi": "15.8%",
+        "finalPayoff": "$168,900",
+        "duration": "10 mo",
+        "status": "redeemed",
+        "buttons": [
+          {
+            "text": "View Statement",
+            "type": "outline"
+          }
+        ]
+      },
+      {
+        "id": "PCIG-2024-089",
+        "address": "3210 Lakeview Drive",
+        "location": "Hillsborough County, FL",
+        "tag": "FIFA",
+        "tagColor": "#1E3A5F",
+        "deadline": "90 days",
+        "deadlineColor": "#10B981",
+        "interestRate": "12.8%",
+        "payoffToday": "$178,000",
+        "minInvest": "$7,500",
+        "status": "active",
+        "buttons": [
+          {
+            "text": "Details",
+            "type": "outline"
+          },
+          {
+            "text": "Invest",
+            "type": "primary"
+          }
+        ]
+      },
+      {
+        "id": "PCIG-2024-134",
+        "address": "5566 Mountain View",
+        "location": "Travis County, TX",
+        "tag": "QT",
+        "tagColor": "#7C3AED",
+        "processStage": "Review",
+        "legalCost": "~$3,200",
+        "estValue": "$425,000",
+        "minInvest": "$20,000",
+        "status": "active",
+        "buttons": [
+          {
+            "text": "Details",
+            "type": "outline"
+          },
+          {
+            "text": "Invest",
+            "type": "primary"
+          }
+        ]
+      },
+      {
+        "id": "PCIG-2024-156",
+        "address": "7890 Bayfront Plaza",
+        "location": "Pinellas County, FL",
+        "tag": "REO",
+        "tagColor": "#64748B",
+        "deadline": "30 days",
+        "deadlineColor": "#F59E0B",
+        "interestRate": "10.0%",
+        "payoffToday": "$155,000",
+        "minInvest": "$8,000",
+        "status": "active",
+        "buttons": [
+          {
+            "text": "Details",
+            "type": "outline"
+          },
+          {
+            "text": "Invest",
+            "type": "primary"
+          }
+        ]
+      }
+    ]
+  },
+  "funds": {
+    "title": "Funds",
+    "subtitle": "Browse diversified investment funds with target IRR and managed strategies.",
+    "searchPlaceholder": "Search by fund name, strategy...",
+    "filters": [
+      "All",
+      "Redemption Fund",
+      "Auction Fund",
+      "REO Fund",
+      "Blended Fund"
+    ],
+    "defaultFilter": "All",
+    "sortOptions": [
+      "Highest IRR",
+      "Lowest IRR",
+      "Highest Min. Investment",
+      "Lowest Min. Investment",
+      "Newest",
+      "Oldest"
+    ],
+    "defaultSort": "Highest IRR",
+    "viewOptions": [
+      "grid",
+      "list"
+    ],
+    "defaultView": "grid",
+    "itemsPerPage": 6,
+    "count": {
+      "showing": "1-6",
+      "total": 12
+    },
+    "items": [
+      {
+        "id": "TDRF-2024-001",
+        "name": "Tax Deed Redemption Fund I",
+        "tag": "Redemption",
+        "tagColor": "#10B981",
+        "tagBgColor": "#E6F6F2",
+        "targetIRR": "12-14%",
+        "returnType": "Annualized Net Return",
+        "lockUpPeriod": "18 months",
+        "minInvestment": "$25,000",
+        "fundSize": "$10,000,000",
+        "remainingCapacity": "$4.2M",
+        "capacityPercent": 42,
+        "capacityColor": "#10B981",
+        "riskProfile": "Low",
+        "riskLevel": 3,
+        "riskMaxLevel": 5,
+        "riskColor": "#10B981",
+        "status": "active",
+        "button": {
+          "text": "Invest in Fund",
+          "type": "primary"
+        }
+      },
+      {
+        "id": "AOF-2024-002",
+        "name": "Auction Opportunity Fund II",
+        "tag": "Auction",
+        "tagColor": "#F59E0B",
+        "tagBgColor": "#FFF7ED",
+        "targetIRR": "15-18%",
+        "returnType": "Annualized Net Return",
+        "lockUpPeriod": "24 months",
+        "minInvestment": "$50,000",
+        "fundSize": "$15,000,000",
+        "remainingCapacity": "$1.5M",
+        "capacityPercent": 10,
+        "capacityColor": "#F59E0B",
+        "riskProfile": "Moderate",
+        "riskLevel": 3,
+        "riskMaxLevel": 5,
+        "riskColor": "#F59E0B",
+        "status": "active",
+        "button": {
+          "text": "Invest in Fund",
+          "type": "primary"
+        }
+      },
+      {
+        "id": "REO-2023-005",
+        "name": "Strategic REO Growth Fund",
+        "tag": "REO",
+        "tagColor": "#1E3A5F",
+        "tagBgColor": "#EFF6FF",
+        "targetIRR": "18-22%",
+        "returnType": "Annualized Net Return",
+        "lockUpPeriod": "36 months",
+        "minInvestment": "$100,000",
+        "fundSize": "$25,000,000",
+        "remainingCapacity": "$12.5M",
+        "capacityPercent": 50,
+        "capacityColor": "#10B981",
+        "riskProfile": "Aggressive",
+        "riskLevel": 5,
+        "riskMaxLevel": 5,
+        "riskColor": "#DC2626",
+        "status": "active",
+        "button": {
+          "text": "Invest in Fund",
+          "type": "primary"
+        }
+      },
+      {
+        "id": "DYF-2024-004",
+        "name": "Diversified Yield Fund IV",
+        "tag": "Blended",
+        "tagColor": "#7C3AED",
+        "tagBgColor": "#F5F3FF",
+        "targetIRR": "10-12%",
+        "returnType": "Annualized Net Return",
+        "lockUpPeriod": "12 months",
+        "minInvestment": "$10,000",
+        "fundSize": "$5,000,000",
+        "remainingCapacity": "$500k",
+        "capacityPercent": 10,
+        "capacityColor": "#F59E0B",
+        "riskProfile": "Low",
+        "riskLevel": 3,
+        "riskMaxLevel": 5,
+        "riskColor": "#10B981",
+        "status": "active",
+        "button": {
+          "text": "Invest in Fund",
+          "type": "primary"
+        }
+      },
+      {
+        "id": "TDRF-2023-002",
+        "name": "Tax Deed Redemption Fund II",
+        "tag": "Closed",
+        "tagColor": "#64748B",
+        "tagBgColor": "#F1F5F9",
+        "realizedIRR": "13.4%",
+        "returnType": "Final Return",
+        "lockUpPeriod": "18 months",
+        "minInvestment": "$25,000",
+        "fundSize": "$8,000,000",
+        "remainingCapacity": "$0",
+        "capacityPercent": 0,
+        "capacityColor": "#64748B",
+        "riskProfile": "Low",
+        "riskLevel": 3,
+        "riskMaxLevel": 5,
+        "riskColor": "#10B981",
+        "status": "closed",
+        "button": {
+          "text": "View Performance",
+          "type": "outline"
+        }
+      },
+      {
+        "id": "STYF-2024-001",
+        "name": "Short-Term Yield Fund",
+        "tag": "Blended",
+        "tagColor": "#7C3AED",
+        "tagBgColor": "#F5F3FF",
+        "targetIRR": "8-10%",
+        "returnType": "Annualized Net Return",
+        "lockUpPeriod": "6 months",
+        "minInvestment": "$10,000",
+        "fundSize": "$2,000,000",
+        "remainingCapacity": "$1.2M",
+        "capacityPercent": 60,
+        "capacityColor": "#10B981",
+        "riskProfile": "Low",
+        "riskLevel": 3,
+        "riskMaxLevel": 5,
+        "riskColor": "#10B981",
+        "status": "active",
+        "button": {
+          "text": "Invest in Fund",
+          "type": "primary"
+        }
+      }
+    ]
+  },
+  "transactions": {
+    "header": {
+      "title": "Transactions",
+      "subtitle": "View and manage all your transaction history"
+    },
+    "summaryCards": [
+      {
+        "id": "total-deposits",
+        "label": "Total Deposits",
+        "value": "$482,500",
+        "subtext": "All Time",
+        "icon": "ArrowDown",
+        "iconColor": "#64748B",
+        "iconBgColor": "#F1F5F9"
+      },
+      {
+        "id": "total-withdrawals",
+        "label": "Total Withdrawals",
+        "value": "$12,400",
+        "subtext": "All Time",
+        "icon": "ArrowUp",
+        "iconColor": "#64748B",
+        "iconBgColor": "#F1F5F9"
+      },
+      {
+        "id": "total-distributions",
+        "label": "Total Distributions",
+        "value": "$60,390",
+        "subtext": "+12.5% Return",
+        "icon": "TrendingUp",
+        "iconColor": "#64748B",
+        "iconBgColor": "#F1F5F9"
+      },
+      {
+        "id": "pending",
+        "label": "Pending",
+        "value": "2",
+        "subtext": "Awaiting approval",
+        "icon": "Clock",
+        "iconColor": "#64748B",
+        "iconBgColor": "#F1F5F9"
+      }
+    ],
+    "searchPlaceholder": "Search by transaction ID, reference, property...",
+    "filters": [
+      "All",
+      "Deposits",
+      "Withdrawals",
+      "Distributions",
+      "Pending"
+    ],
+    "defaultFilter": "All",
+    "sortOptions": [
+      "Newest",
+      "Oldest",
+      "Amount (High to Low)",
+      "Amount (Low to High)"
+    ],
+    "defaultSort": "Newest",
+    "itemsPerPage": 8,
+    "count": {
+      "showing": "1-8",
+      "total": "124"
+    },
+    "transactions": [
+      {
+        "id": "TXN-84920",
+        "date": "Jan 15, 2024, 09:30 AM",
+        "type": "Distribution",
+        "typeIcon": "TrendingUp",
+        "typeIconColor": "#10B981",
+        "typeIconBgColor": "#ECFDF5",
+        "description": "Quarterly yield distribution Q4 2...",
+        "propertyFund": "Tax Deed Fund I TDRF-2023-001",
+        "amount": "+$4,250.00",
+        "amountColor": "#10B981",
+        "status": "Completed",
+        "statusColor": "#10B981",
+        "statusBgColor": "#ECFDF5",
+        "method": "Fund Transfer",
+        "action": "View",
+        "actionColor": "#2563EB"
+      },
+      {
+        "id": "TXN-84112",
+        "date": "Jan 10, 2024, 02:15 PM",
+        "type": "Deposit",
+        "typeIcon": "Plus",
+        "typeIconColor": "#10B981",
+        "typeIconBgColor": "#ECFDF5",
+        "description": "Initial capital contribution",
+        "propertyFund": "-",
+        "amount": "+$50,000.00",
+        "amountColor": "#10B981",
+        "status": "Completed",
+        "statusColor": "#10B981",
+        "statusBgColor": "#ECFDF5",
+        "method": "Wire Transfer",
+        "action": "View",
+        "actionColor": "#2563EB"
+      },
+      {
+        "id": "TXN-83550",
+        "date": "Jan 05, 2024, 11:45 AM",
+        "type": "Owner Payoff",
+        "typeIcon": "CheckCircle",
+        "typeIconColor": "#10B981",
+        "typeIconBgColor": "#ECFDF5",
+        "description": "Property redemption payoff recei...",
+        "propertyFund": "1240 Oak Street PCIG-2024-001",
+        "amount": "+$125,450.00",
+        "amountColor": "#10B981",
+        "status": "Completed",
+        "statusColor": "#10B981",
+        "statusBgColor": "#ECFDF5",
+        "method": "ACH Credit",
+        "action": "View",
+        "actionColor": "#2563EB"
+      },
+      {
+        "id": "TXN-85001",
+        "date": "Jan 28, 2024, 04:20 PM",
+        "type": "Withdrawal",
+        "typeIcon": "Minus",
+        "typeIconColor": "#F59E0B",
+        "typeIconBgColor": "#FFFBEB",
+        "description": "Withdrawal request to Chase Bank",
+        "propertyFund": "-",
+        "amount": "-$12,000.00",
+        "amountColor": "#EF4444",
+        "status": "Pending",
+        "statusColor": "#F97316",
+        "statusBgColor": "#FFF7ED",
+        "method": "ACH",
+        "action": "Cancel",
+        "actionColor": "#EF4444"
+      },
+      {
+        "id": "TXN-82100",
+        "date": "Dec 28, 2023, 09:00 AM",
+        "type": "Stripe Fee",
+        "typeIcon": "CreditCard",
+        "typeIconColor": "#64748B",
+        "typeIconBgColor": "#F1F5F9",
+        "description": "Legal processing fee",
+        "propertyFund": "450 Pine Avenue PCIG-2023-045",
+        "amount": "-$450.00",
+        "amountColor": "#EF4444",
+        "status": "Completed",
+        "statusColor": "#10B981",
+        "statusBgColor": "#ECFDF5",
+        "method": "Stripe",
+        "action": "View",
+        "actionColor": "#2563EB"
+      },
+      {
+        "id": "TXN-81500",
+        "date": "Dec 15, 2023, 01:30 PM",
+        "type": "QC Payment",
+        "typeIcon": "Wrench",
+        "typeIconColor": "#64748B",
+        "typeIconBgColor": "#F1F5F9",
+        "description": "Quiet Title action attorney fee",
+        "propertyFund": "880 Maple Drive PCIG-2023-088",
+        "amount": "-$2,500.00",
+        "amountColor": "#EF4444",
+        "status": "Completed",
+        "statusColor": "#10B981",
+        "statusBgColor": "#ECFDF5",
+        "method": "ACE Debit",
+        "action": "View",
+        "actionColor": "#2563EB"
+      },
+      {
+        "id": "TXN-81450",
+        "date": "Dec 10, 2023, 09:30 AM",
+        "type": "Distribution",
+        "typeIcon": "TrendingUp",
+        "typeIconColor": "#10B981",
+        "typeIconBgColor": "#ECFDF5",
+        "description": "Quarterly yield distribution Q3 2...",
+        "propertyFund": "Tax Deed Fund I TDRF-2023-001",
+        "amount": "+$4,250.00",
+        "amountColor": "#10B981",
+        "status": "Completed",
+        "statusColor": "#10B981",
+        "statusBgColor": "#ECFDF5",
+        "method": "Fund Transfer",
+        "action": "View",
+        "actionColor": "#2563EB"
+      },
+      {
+        "id": "TXN-81200",
+        "date": "Dec 05, 2023, 03:45 PM",
+        "type": "Deposit",
+        "typeIcon": "Plus",
+        "typeIconColor": "#10B981",
+        "typeIconBgColor": "#ECFDF5",
+        "description": "Additional investment contribution",
+        "propertyFund": "-",
+        "amount": "+$25,000.00",
+        "amountColor": "#10B981",
+        "status": "Completed",
+        "statusColor": "#10B981",
+        "statusBgColor": "#ECFDF5",
+        "method": "Wire Transfer",
+        "action": "View",
+        "actionColor": "#2563EB"
+      }
+    ]
+  },
+  "documents": {
+    "header": {
+      "title": "Documents",
+      "subtitle": "Access your statements, tax forms, and investment documents"
+    },
+    "categories": [
+      "All Documents",
+      "Statements",
+      "Tax Documents",
+      "Investment Summaries",
+      "Transaction Reports",
+      "KYC Documents"
+    ],
+    "defaultCategory": "All Documents",
+    "summaryCards": [
+      {
+        "id": "total-documents",
+        "label": "Total Documents",
+        "value": "42",
+        "icon": "FileText",
+        "iconColor": "#1E3A5F",
+        "iconBgColor": "#EFF6FF"
+      },
+      {
+        "id": "tax-documents-available",
+        "label": "Tax Documents Available",
+        "value": "2",
+        "subtext": "K-1 forms, tax packages",
+        "icon": "FileText",
+        "iconColor": "#1E3A5F",
+        "iconBgColor": "#EFF6FF"
+      },
+      {
+        "id": "new-this-month",
+        "label": "New This Month",
+        "value": "3",
+        "subtext": "Recently added documents",
+        "icon": "CloudDownload",
+        "iconColor": "#1E3A5F",
+        "iconBgColor": "#EFF6FF"
+      }
+    ],
+    "taxDocumentsSection": {
+      "title": "Tax Documents Available",
+      "description": "Your K-1 forms and tax packages for 2023 are ready for download.",
+      "buttons": [
+        {
+          "text": "K-1 Tax aorm - 2023",
+          "icon": "FileText"
+        },
+        {
+          "text": "Tax Package - 2023",
+          "icon": "FileText"
+        }
+      ],
+      "actions": [
+        {
+          "text": "Download All",
+          "type": "primary"
+        },
+        {
+          "text": "View Tax Summary",
+          "type": "outline"
+        }
+      ]
+    },
+    "searchPlaceholder": "Search documents by name, date, type...",
+    "filters": [
+      "All",
+      "This Year",
+      "Last Year",
+      "PDF"
+    ],
+    "defaultFilter": "All",
+    "sortOptions": [
+      "Newest",
+      "Oldest",
+      "Name A-Z",
+      "Name Z-A",
+      "Size"
+    ],
+    "defaultSort": "Newest",
+    "viewOptions": [
+      "grid",
+      "list"
+    ],
+    "defaultView": "grid",
+    "itemsPerPage": 12,
+    "count": {
+      "showing": "1-12",
+      "total": 42
+    },
+    "documents": [
+      {
+        "id": "DOC-2023-001",
+        "name": "Monthly Statement - 3 ct 2023",
+        "type": "Monthly Statement",
+        "category": "Statements",
+        "tag": "NEW",
+        "tagColor": "#10B981",
+        "tagBgColor": "#ECFDF5",
+        "format": "PDF",
+        "formatColor": "#64748B",
+        "formatBgColor": "#F1F5F9",
+        "icon": "FileText",
+        "iconColor": "#EF4444",
+        "generatedDate": "Oct 31, 2023",
+        "size": "2.4 MB",
+        "description": "Generated: Oct 31, 2023"
+      },
+      {
+        "id": "DOC-2023-002",
+        "name": "K-1 Tax aorm - 2023",
+        "type": "Tax Document",
+        "category": "Tax Documents",
+        "tag": "Tax Doc",
+        "tagColor": "#10B981",
+        "tagBgColor": "#ECFDF5",
+        "format": "PDF",
+        "formatColor": "#64748B",
+        "formatBgColor": "#F1F5F9",
+        "icon": "FileCheck",
+        "iconColor": "#10B981",
+        "generatedDate": "Oct 15, 2023",
+        "size": "2023 Tax Year",
+        "description": "Generated: Oct 15, 2023"
+      },
+      {
+        "id": "DOC-2023-003",
+        "name": "Portfolio Summary - Q3 2023",
+        "type": "Investment Summary",
+        "category": "Investment Summaries",
+        "tag": "PDF",
+        "tagColor": "#64748B",
+        "tagBgColor": "#F1F5F9",
+        "format": "PDF",
+        "formatColor": "#64748B",
+        "formatBgColor": "#F1F5F9",
+        "icon": "PieChart",
+        "iconColor": "#EF4444",
+        "generatedDate": "Oct 05, 2023",
+        "size": "1.8 MB",
+        "description": "Generated: Oct 05, 2023"
+      },
+      {
+        "id": "DOC-2023-004",
+        "name": "Transaction History - YTD",
+        "type": "Transaction Report",
+        "category": "Transaction Reports",
+        "tag": "XLSX",
+        "tagColor": "#10B981",
+        "tagBgColor": "#ECFDF5",
+        "format": "XLSX",
+        "formatColor": "#10B981",
+        "formatBgColor": "#ECFDF5",
+        "icon": "Receipt",
+        "iconColor": "#10B981",
+        "generatedDate": "Oct 01, 2023",
+        "size": "540 KB",
+        "description": "Generated: Oct 01, 2023"
+      },
+      {
+        "id": "DOC-2023-005",
+        "name": "Monthly Statement - Sep 2023",
+        "type": "Monthly Statement",
+        "category": "Statements",
+        "tag": "PDF",
+        "tagColor": "#64748B",
+        "tagBgColor": "#F1F5F9",
+        "format": "PDF",
+        "formatColor": "#64748B",
+        "formatBgColor": "#F1F5F9",
+        "icon": "FileText",
+        "iconColor": "#EF4444",
+        "generatedDate": "Sep 30, 2023",
+        "size": "2.3 MB",
+        "description": "Generated: Sep 30, 2023"
+      },
+      {
+        "id": "DOC-2023-006",
+        "name": "Property Report - 1240 3 ak St",
+        "type": "Property Report",
+        "category": "Investment Summaries",
+        "tag": "PDF",
+        "tagColor": "#64748B",
+        "tagBgColor": "#F1F5F9",
+        "format": "PDF",
+        "formatColor": "#64748B",
+        "formatBgColor": "#F1F5F9",
+        "icon": "Building2",
+        "iconColor": "#2563EB",
+        "generatedDate": "Sep 15, 2023",
+        "size": "4.1 MB",
+        "description": "Generated: Sep 15, 2023"
+      },
+      {
+        "id": "DOC-2023-007",
+        "name": "Verified ID Document",
+        "type": "KYC Document",
+        "category": "KYC Documents",
+        "tag": "PDF",
+        "tagColor": "#64748B",
+        "tagBgColor": "#F1F5F9",
+        "format": "PDF",
+        "formatColor": "#64748B",
+        "formatBgColor": "#F1F5F9",
+        "icon": "Shield",
+        "iconColor": "#2563EB",
+        "generatedDate": "Jan 10, 2023",
+        "size": "Secure File",
+        "description": "Uploaded: Jan 10, 2023"
+      },
+      {
+        "id": "DOC-2023-008",
+        "name": "Monthly Statement - Aug 2023",
+        "type": "Monthly Statement",
+        "category": "Statements",
+        "tag": "PDF",
+        "tagColor": "#64748B",
+        "tagBgColor": "#F1F5F9",
+        "format": "PDF",
+        "formatColor": "#64748B",
+        "formatBgColor": "#F1F5F9",
+        "icon": "FileText",
+        "iconColor": "#EF4444",
+        "generatedDate": "Aug 31, 2023",
+        "size": "2.3 MB",
+        "description": "Generated: Aug 31, 2023"
+      }
+    ]
+  },
+  "settings": {
+    "defaultSection": "profile",
+    "profile": {
+      "profilePicture": "https://via.placeholder.com/120",
+      "fullName": "John Michael Doe",
+      "email": "john.doe@example.com",
+      "emailVerified": true,
+      "phone": "+1 (555) 123-4567",
+      "phoneVerified": false,
+      "dateOfBirth": "06/15/1985",
+      "taxId": "****-6789",
+      "address": {
+        "street": "1234 Investment Way, Apt 4B",
+        "city": "New York",
+        "state": "NY",
+        "zipCode": "10001"
+      }
+    },
+    "security": {
+      "passwordLastChanged": "Oct 15, 2023",
+      "twoFactorEnabled": false,
+      "activeSessions": [
+        {
+          "id": "session-1",
+          "device": "Chrome on macOS",
+          "location": "New York, USA",
+          "time": "just now",
+          "isCurrent": true
+        },
+        {
+          "id": "session-2",
+          "device": "Safari on iPhone",
+          "location": "New York, USA",
+          "time": "2 days ago",
+          "isCurrent": false
+        }
+      ]
+    },
+    "notifications": {
+      "emailNotificationsEnabled": true,
+      "emailNotificationTypes": [
+        {
+          "id": "transaction-updates",
+          "label": "Transaction updates",
+          "enabled": true
+        },
+        {
+          "id": "document-notifications",
+          "label": "Document available notifications",
+          "enabled": true
+        },
+        {
+          "id": "distribution-alerts",
+          "label": "Distribution alerts",
+          "enabled": true
+        }
+      ],
+      "inAppNotificationsEnabled": false
+    },
+    "bankAccounts": [
+      {
+        "id": "account-1",
+        "bankName": "Chase Bank",
+        "accountType": "Checking",
+        "accountNumber": "****1234",
+        "status": "verified",
+        "statusLabel": "Verified"
+      },
+      {
+        "id": "account-2",
+        "bankName": "Wells Fargo",
+        "accountType": "Savings",
+        "accountNumber": "****5678",
+        "status": "pending",
+        "statusLabel": "Pending"
+      }
+    ],
+    "privacy": {
+      "shareDataWithThirdParties": false,
+      "marketingEmails": true
+    }
+  },
+  "shareMarketplace": {
+    "title": "Share Marketplace",
+    "subtitle": "Buy and sell property shares with other investors",
+    "stats": [
+      {
+        "label": "Available Shares",
+        "value": "48",
+        "subtext": "Across 12 properties",
+        "icon": "PieChart"
+      },
+      {
+        "label": "My Shares",
+        "value": "2,450",
+        "subtext": "In 5 properties",
+        "icon": "Briefcase"
+      },
+      {
+        "label": "Active Listings",
+        "value": "2",
+        "subtext": "Shares for sale",
+        "icon": "Tag"
+      },
+      {
+        "label": "Recent Trades",
+        "value": "15",
+        "subtext": "Last 30 days",
+        "icon": "ArrowRightLeft"
+      }
+    ],
+    "tabs": [
+      "Available Shares",
+      "My Shares",
+      "My Listings",
+      "Share Transfer History",
+      "Buy/Sell Orders"
+    ],
+    "defaultTab": "Available Shares",
+    "filters": [
+      "All",
+      "For Sale",
+      "My Shares",
+      "My Listings"
+    ],
+    "sortOptions": [
+      "Newest",
+      "Price: Low to High",
+      "Price: High to Low",
+      "Ownership %"
+    ],
+    "items": [
+      {
+        "id": "PCIG-2024-001",
+        "propertyAddress": "1240 Oak Street",
+        "location": "Miami, FL 33133",
+        "badge": "For Sale",
+        "badgeColor": "#10B981",
+        "badgeBg": "#DCFCE7",
+        "sharesAvailable": "250 shares",
+        "totalShares": "of 1,000 total",
+        "pricePerShare": "$100.00",
+        "ownership": "25.0%",
+        "totalPrice": "$25,000",
+        "seller": "Investor #4928",
+        "listedTime": "Listed: 2 days ago",
+        "status": "active"
+      },
+      {
+        "id": "PCIG-2023-104",
+        "propertyAddress": "8500 Sunset Blvd",
+        "location": "Los Angeles, CA 90069",
+        "badge": "For Sale",
+        "badgeColor": "#10B981",
+        "badgeBg": "#DCFCE7",
+        "sharesAvailable": "50 shares",
+        "totalShares": "of 500 total",
+        "pricePerShare": "$210.50",
+        "ownership": "10.0%",
+        "totalPrice": "$10,525",
+        "seller": "Investor #8821",
+        "listedTime": "Listed: 1 week ago",
+        "status": "active"
+      },
+      {
+        "id": "PCIG-2024-055",
+        "propertyAddress": "45 Pine Ridge Rd",
+        "location": "Naples, FL 34108",
+        "badge": "Pending",
+        "badgeColor": "#D97706",
+        "badgeBg": "#FEF3C7",
+        "sharesAvailable": "100 shares",
+        "totalShares": "of 2,000 total",
+        "pricePerShare": "$55.00",
+        "ownership": "5.0%",
+        "totalPrice": "$5,500",
+        "seller": "Investor #3391",
+        "listedTime": "Listed: 3 hours ago",
+        "status": "pending"
+      },
+      {
+        "id": "PCIG-2023-099",
+        "propertyAddress": "200 Ocean Drive",
+        "location": "Miami Beach, FL 33139",
+        "badge": "For Sale",
+        "badgeColor": "#10B981",
+        "badgeBg": "#DCFCE7",
+        "sharesAvailable": "500 shares",
+        "totalShares": "of 5,000 total",
+        "pricePerShare": "$120.00",
+        "ownership": "10.0%",
+        "totalPrice": "$60,000",
+        "seller": "Investor #1029",
+        "listedTime": "Listed: 5 days ago",
+        "status": "active"
+      },
+      {
+        "id": "PCIG-2024-012",
+        "propertyAddress": "777 Glades Rd",
+        "location": "Boca Raton, FL 33431",
+        "badge": "For Sale",
+        "badgeColor": "#10B981",
+        "badgeBg": "#DCFCE7",
+        "sharesAvailable": "10 shares",
+        "totalShares": "of 100 total",
+        "pricePerShare": "$1,500.00",
+        "ownership": "10.0%",
+        "totalPrice": "$15,000",
+        "seller": "Investor #5542",
+        "listedTime": "Listed: 1 day ago",
+        "status": "active"
+      },
+      {
+        "id": "PCIG-2023-111",
+        "propertyAddress": "3301 NE 1st Ave",
+        "location": "Miami, FL 33137",
+        "badge": "Sold",
+        "badgeColor": "#64748B",
+        "badgeBg": "#F1F5F9",
+        "sharesAvailable": "150 shares",
+        "totalShares": "of 1,500 total",
+        "pricePerShare": "$85.00",
+        "ownership": "10.0%",
+        "totalPrice": "$12,750",
+        "seller": "Investor #9931",
+        "listedTime": "Sold: Yesterday",
+        "status": "sold"
+      }
+    ]
+  }
+}
