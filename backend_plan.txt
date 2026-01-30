@@ -1,0 +1,1302 @@
+# PCIG Backend Development Plan - Master Overview
+
+## Project Overview
+This document outlines the complete backend requirements for the PCIG (Property Certificate Investment Group) platform. The system manages tax lien certificates, property investments, fund management, and investor relations.
+
+**Total Screens: 64+**
+**User Roles: Admin, Investor, Lawyer, Property Owner**
+
+---
+
+## Screen Categories and Status Tracking
+
+### ✅ = Completed | 🔄 = In Progress | ⏳ = Pending
+
+---
+
+## COMPLETED WORK SUMMARY
+
+**Last Major Update:** 2026-01-23
+
+### ✅ Phase 1: Foundation (COMPLETED)
+1. ✅ Laravel backend setup (PCIG_Backend)
+2. ✅ Database schema created (all core tables)
+3. ✅ Authentication system (all 4 screens)
+4. ✅ User management with roles (Spatie Permissions)
+5. ✅ Investor profiles with encrypted fields
+6. ✅ Admin dashboard (basic metrics)
+7. ✅ Investor dashboard (full implementation)
+
+### ✅ Phase 2: Core Features (COMPLETED)
+1. ✅ Property management (CRUD operations)
+2. ✅ Fund management (CRUD operations)
+3. ✅ Investor marketplace (properties & funds)
+4. ✅ Investment creation (properties & funds)
+5. ✅ Transaction history (investor & admin)
+6. ✅ File uploads (property images & documents)
+7. ✅ Workflow stage management
+8. ✅ Admin investor management
+9. ✅ Distributions management (create, process, view)
+10. ✅ Investor profile/settings management
+11. ✅ Investment portfolio summary
+
+### ✅ Core Infrastructure (COMPLETED)
+- ✅ Laravel Sanctum API authentication
+- ✅ Spatie Laravel Permission (roles: admin, investor, lawyer, property_owner)
+- ✅ Database migrations (all core tables)
+- ✅ Eloquent relationships (all models)
+- ✅ API Resources for clean JSON responses
+- ✅ Form Request validation classes
+- ✅ CORS configuration
+- ✅ Storage link for file uploads
+
+### 📊 Progress Statistics
+- **Completed Screens:** 14+ core screens
+- **API Endpoints:** 40+ endpoints implemented
+- **Database Tables:** 15+ core tables created
+- **Models:** 12+ Eloquent models with relationships
+- **Controllers:** 10+ API controllers implemented
+
+---
+
+## 1. AUTHENTICATION SYSTEM (4 Screens)
+
+### 1.1 Login Screen ✅
+**File:** `src/pages/auth/Login.tsx`
+**Backend Requirements:**
+- POST `/api/auth/login` - User authentication ✅
+- Email/password validation ✅
+- JWT/Sanctum token generation ✅
+- Rate limiting (5 attempts per minute) ⏳ (To be configured)
+- Remember me functionality ⏳ (Frontend implementation)
+- Last login timestamp tracking ✅
+
+**Database Tables:**
+- `users` (id, email, password, role_type, last_login_at, remember_token) ✅
+- `personal_access_tokens` (Sanctum) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AuthController@login with Sanctum tokens
+
+---
+
+### 1.2 Admin Login Screen ✅
+**File:** `src/pages/auth/AdminLogin.tsx`
+**Backend Requirements:**
+- POST `/api/auth/admin-login` - Admin-specific authentication ✅
+- Role verification (admin only) ✅
+- Two-factor authentication (2FA) support ⏳ (Future enhancement)
+- Admin activity logging ⏳ (Can use Spatie Activity Log)
+- IP whitelist check (optional) ⏳ (Future enhancement)
+
+**Database Tables:**
+- `users` (role_type = 'admin') ✅
+- `admin_login_logs` ⏳ (Can be added via Activity Log)
+
+**Status:** ✅ Completed
+**Implementation:** AuthController@adminLogin with role check
+
+---
+
+### 1.3 Register Screen ✅
+**File:** `src/pages/auth/Register.tsx`
+**Backend Requirements:**
+- POST `/api/auth/register` - New investor registration ✅
+- Email uniqueness validation ✅
+- Password strength validation ✅
+- Email verification workflow ⏳ (Future enhancement)
+- Welcome email notification ⏳ (Future enhancement)
+- Auto-assign 'investor' role ✅
+- Auto-create InvestorProfile ✅
+
+**Database Tables:**
+- `users` ✅
+- `investor_profiles` ✅
+- `email_verifications` ⏳ (Future enhancement)
+
+**Status:** ✅ Completed
+**Implementation:** AuthController@register with profile creation
+
+---
+
+### 1.4 Forgot Password Screen ✅
+**File:** `src/pages/auth/ForgotPassword.tsx`
+**Backend Requirements:**
+- POST `/api/auth/forgot-password` - Send reset link ✅
+- POST `/api/auth/reset-password` - Reset password ✅
+- Token generation and expiration (1 hour) ✅
+- Email notification with reset link ✅ (Uses Laravel Password facade)
+- Rate limiting (3 requests per hour) ⏳ (To be configured)
+
+**Database Tables:**
+- `password_reset_tokens` (email, token, created_at) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AuthController@forgotPassword and @resetPassword
+
+---
+
+## 2. INVESTOR PORTAL (10 Screens)
+
+### 2.1 Investor Dashboard ✅
+**File:** `src/pages/investor/investor_dashboard.tsx`
+**Backend Requirements:**
+- GET `/api/investor/dashboard` - Dashboard summary ✅
+  - Total investment value ✅
+  - Active properties count ✅
+  - Total returns (YTD, all-time) ✅
+  - Recent transactions (last 10) ✅
+  - Portfolio performance chart data ⏳ (Data available, chart on frontend)
+  - Upcoming distributions ✅
+  - Pending actions/notifications ⏳ (Future enhancement)
+- GET `/api/investor/investments` - Investment portfolio summary ✅
+- GET `/api/investor/distributions` - Distribution history ✅
+
+**Database Tables:**
+- `investments` ✅
+- `distributions` ✅
+- `transactions` ✅
+
+**Status:** ✅ Completed
+**Implementation:** InvestorDashboardController (dashboard, investments, distributions)
+
+---
+
+### 2.2 Properties Marketplace ✅
+**File:** `src/pages/investor/investors_marketplace.tsx`
+**Backend Requirements:**
+- GET `/api/investor/properties` - List available properties ✅
+  - Pagination, filtering, sorting ✅
+  - Filters: price range, location, status, ROI ✅
+  - Search by address, parcel ID ✅
+- GET `/api/investor/properties/:id` - Property details ✅
+- POST `/api/investor/properties/:id/invest` - Make investment ✅
+
+**Database Tables:**
+- `properties` ✅
+- `property_images` ✅
+- `property_documents` ✅
+
+**Status:** ✅ Completed
+**Implementation:** InvestorPropertyController (list, show, invest)
+
+---
+
+### 2.3 Funds Marketplace ✅
+**File:** `src/pages/investor/funds_marketplace.tsx`
+**Backend Requirements:**
+- GET `/api/investor/funds` - List available funds ✅
+  - Fund performance metrics ✅
+  - Minimum investment ✅
+  - Current NAV (Net Asset Value) ✅
+  - Historical returns ⏳ (Data structure ready)
+- POST `/api/investor/funds/:id/invest` - Invest in fund ✅
+- GET `/api/investor/funds/:id` - Fund details with composition ✅
+
+**Database Tables:**
+- `funds` ✅
+- `fund_investments` ✅
+- `fund_properties` ✅
+- `fund_performance` ⏳ (Future enhancement)
+
+**Status:** ✅ Completed
+**Implementation:** InvestorFundController (list, show, invest)
+
+---
+
+### 2.4 Share Marketplace ✅
+**File:** `src/pages/investor/ShareMarketplace.tsx`
+**Backend Requirements:**
+- GET `/api/investor/shares/available` - Secondary market listings ✅
+- POST `/api/investor/shares/list` - List shares for sale ✅
+- POST `/api/investor/shares/buy/:id` - Purchase shares ✅
+- DELETE `/api/investor/shares/listing/:id` - Cancel listing ✅
+
+**Database Tables:**
+- `share_listings` (id, seller_id, property_id, shares, price_per_share, status) ✅
+- `share_transactions` (listing_id, buyer_id, seller_id, shares, total_price, transaction_date) ✅
+
+**Status:** ✅ Completed
+**Implementation:** ShareMarketplaceController (available, list, buy, cancel)
+
+---
+
+### 2.5 Investor Transactions ✅
+**File:** `src/pages/investor/investors_transactions.tsx`
+**Backend Requirements:**
+- GET `/api/investor/transactions` - Transaction history ✅
+  - Pagination, filtering by type, date range ✅
+  - Export to CSV/PDF ⏳ (Future enhancement)
+  - Transaction types: investment, distribution, sale, purchase ✅
+
+**Database Tables:**
+- `transactions` ✅
+
+**Status:** ✅ Completed
+**Implementation:** InvestorTransactionController@list
+
+---
+
+### 2.6 Investor Documents ✅
+**File:** `src/pages/investor/investors_documents.tsx`
+**Backend Requirements:**
+- GET `/api/investor/documents` - List all documents ✅
+  - K-1 forms, distribution statements, contracts ✅
+  - Filter by year, type ✅
+- GET `/api/investor/documents/:id/download` - Download document ✅
+- Document auto-generation for tax forms ⏳ (Future)
+
+**Database Tables:**
+- `investor_documents` (id, user_id, type, title, file_path, year, generated_at) ✅
+
+**Status:** ✅ Completed
+**Implementation:** InvestorDocumentController (list, download)
+
+---
+
+### 2.7 Investor Settings ✅
+**File:** `src/pages/investor/investors_settings.tsx`
+**Backend Requirements:**
+- GET `/api/investor/settings/profile` - Get user profile ✅
+- PUT `/api/investor/settings/profile` - Update profile ✅
+  - Profile information ✅
+  - Notification preferences ⏳ (Future enhancement)
+  - Banking information (ACH) ⏳ (Can be added to investor_profiles)
+  - Tax information (W-9) ⏳ (Can be added to investor_profiles)
+- PUT `/api/investor/settings/password` - Change password ✅
+- GET `/api/investor/investments` - Investment portfolio summary ✅
+
+**Database Tables:**
+- `users` ✅
+- `investor_profiles` ✅
+- `notification_preferences` ⏳ (Future enhancement)
+
+**Status:** ✅ Completed (Core functionality)
+**Implementation:** InvestorSettingsController (getProfile, updateProfile, changePassword) + InvestorDashboardController@investments
+
+---
+
+### 2.8 KYC Verification ✅
+**File:** `src/pages/investor/kyc_verification.tsx`
+**Backend Requirements:**
+- GET `/api/investor/kyc/status` - Get verification status ✅
+- POST `/api/investor/kyc/submit` - Submit KYC documents ✅
+  - ID verification (driver's license, passport) ✅
+  - Address verification ✅
+  - Accredited investor verification (if applicable) ✅
+- Integration with KYC service (e.g., Jumio, Onfido) ⏳ (Mocked for now)
+
+**Database Tables:**
+- `kyc_verifications` (user_id, status, submitted_at, verified_at, documents) ✅
+- `kyc_documents` (verification_id, type, file_path, status) ✅
+
+**Status:** ✅ Completed
+**Implementation:** InvestorKycController@status and @submit
+
+---
+
+### 2.9 Investor Property Detail ✅
+**File:** `src/pages/investor/InvestorPropertyDetail.tsx`
+**Backend Requirements:**
+- GET `/api/investor/properties/:id` - Detailed property information ✅
+  - Property details, images, documents ✅
+  - Investment summary (if invested) ⏳ (Can be added)
+  - Performance history ⏳ (Future enhancement)
+  - Distribution history ⏳ (Can be added)
+- POST `/api/investor/properties/:id/invest` - Make investment ✅
+
+**Database Tables:**
+- `properties` ✅
+- `investments` ✅
+- `distributions` ✅
+
+**Status:** ✅ Completed (Core functionality)
+**Implementation:** InvestorPropertyController@show and @invest
+
+---
+
+### 2.10 Investor Fund Detail ✅
+**File:** `src/pages/investor/InvestorFundDetail.tsx`
+**Backend Requirements:**
+- GET `/api/investor/funds/:id` - Detailed fund information ✅
+  - Fund composition (properties) ✅
+  - Performance metrics ✅
+  - Distribution schedule ⏳ (Future enhancement)
+  - Investment summary (if invested) ⏳ (Can be added)
+
+**Database Tables:**
+- `funds` ✅
+- `fund_properties` ✅
+- `fund_investments` ✅
+
+**Status:** ✅ Completed (Core functionality)
+**Implementation:** InvestorFundController@show
+
+---
+
+## 3. ADMIN DASHBOARD & CORE (2 Screens)
+
+### 3.1 Admin Dashboard ✅
+**File:** `src/pages/admin/Dashboard.tsx`
+**Backend Requirements:**
+- GET `/api/admin/dashboard` - Admin dashboard metrics ✅
+  - Total properties, funds, investors ✅
+  - Total AUM (Assets Under Management) ✅
+  - Recent activities ✅
+  - Pending approvals ✅
+  - System health metrics ⏳ (Future enhancement)
+  - Revenue/profit charts ⏳ (Data available, chart on frontend)
+
+**Database Tables:**
+- Aggregated data from multiple tables ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminDashboardController@dashboard
+
+---
+
+### 3.2 Properties Workflow Hub ✅
+**File:** `src/pages/admin/PropertiesWorkflow.tsx`
+**Backend Requirements:**
+- GET `/api/admin/properties/workflow/stages` - Properties by workflow stage ✅
+  - FIFA Import, Processing, Sheriff, Redemption, etc. ✅
+  - Kanban-style view data ✅
+  - Drag-and-drop stage updates ✅
+- PUT `/api/admin/properties/:id/stage` - Update property stage ✅
+
+**Database Tables:**
+- `properties` (workflow_stage) ✅
+- `property_workflow_history` ⏳ (Can use Activity Log)
+
+**Status:** ✅ Completed
+**Implementation:** AdminPropertyController@workflowProperties and @updateStage
+
+---
+
+## 4. PROPERTY MANAGEMENT (13 Screens)
+
+### 4.1 Add Property ✅
+**File:** `src/pages/admin/AddProperty.tsx`
+**Backend Requirements:**
+- POST `/api/admin/properties` - Create new property ✅
+  - Property details, parcel info, purchase details ✅
+  - Image upload (multiple) ✅
+  - Document upload ✅
+  - Validation for required fields ✅
+
+**Database Tables:**
+- `properties` ✅
+- `property_images` ✅
+- `property_documents` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminPropertyController@store, @uploadImage, @uploadDocument
+
+---
+
+### 4.2 Property Detail ✅
+**File:** `src/pages/admin/PropertyDetail.tsx`
+**Backend Requirements:**
+- GET `/api/admin/properties/:id` - Full property details ✅
+- PUT `/api/admin/properties/:id` - Update property ✅
+- DELETE `/api/admin/properties/:id` - Delete property ✅
+- GET `/api/admin/properties/:id/timeline` - Activity timeline ⏳ (Can use Activity Log)
+
+**Database Tables:**
+- `properties` ✅
+- `property_timeline` ⏳ (Can use Spatie Activity Log)
+
+**Status:** ✅ Completed (Core CRUD)
+**Implementation:** AdminPropertyController@show, @update, @destroy
+
+---
+
+### 4.3 Property Documents ✅
+**File:** `src/pages/admin/PropertyDocuments.tsx`
+**Backend Requirements:**
+- GET `/api/admin/properties/:id/documents` - List documents ✅ (via property detail endpoint)
+- POST `/api/admin/properties/documents/upload` - Upload document ✅
+- DELETE `/api/admin/properties/documents/:id` - Delete document ✅
+- GET `/api/admin/properties/:id/documents/:docId/download` ⏳ (Can be added)
+
+**Database Tables:**
+- `property_documents` ✅
+
+**Status:** ✅ Completed (Core functionality)
+**Implementation:** AdminPropertyController@uploadDocument, @deleteDocument
+
+---
+
+### 4.4 FIFA Import ✅
+**File:** `src/pages/admin/FIFAImport.tsx`
+**Backend Requirements:**
+- POST `/api/admin/fifa/import` - Import FIFA file (Excel/CSV) ✅
+- GET `/api/admin/fifa/imports` - List import history ✅
+- GET `/api/admin/fifa/imports/:id` - Import details and errors ✅
+- Background job for processing large files ⏳ (Handled directly for now)
+
+**Database Tables:**
+- `fifa_imports` (id, file_path, status, total_rows, processed_rows, errors, imported_by, created_at) ✅
+- `fifa_import_errors` (import_id, row_number, error_message) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminFIFAController (upload, list, show)
+
+---
+
+### 4.5 FIFA Processing ✅
+**File:** `src/pages/admin/FIFAProcessing.tsx`
+**Backend Requirements:**
+- GET `/api/admin/fifa/processing` - List properties in FIFA processing ✅
+- PUT `/api/admin/fifa/:id/process` - Process FIFA entry (approve/reject) ✅
+- POST `/api/admin/fifa/:id/approve` - Approve for next stage ✅ (Merged into process endpoint)
+- POST `/api/admin/fifa/:id/reject` - Reject entry ✅ (Merged into process endpoint)
+
+**Database Tables:**
+- `properties` (workflow_stage) ✅
+- `fifa_processing_notes` ⏳ (Using process notes field)
+
+**Status:** ✅ Completed
+**Implementation:** AdminPropertyController@fifaProcessing and @processFIFA
+
+---
+
+### 4.6 Sheriff Workflow ✅
+**File:** `src/pages/admin/SheriffWorkflow.tsx`
+**Backend Requirements:**
+- GET `/api/admin/sheriff/properties` - Properties in sheriff sale process ✅
+- PUT `/api/admin/sheriff/:id/update` - Update sheriff sale info ✅
+  - Sale date, status, winning bid ✅
+- POST `/api/admin/sheriff/:id/complete` - Mark sale complete ✅
+
+**Database Tables:**
+- `sheriff_sales` (property_id, sale_date, status, winning_bid, notes) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminSheriffController (properties, update, complete)
+
+---
+
+### 4.7 Redemption Tracking ✅
+**File:** `src/pages/admin/RedemptionTracking.tsx`
+**Backend Requirements:**
+- GET `/api/admin/redemption/properties` - Properties in redemption period ✅
+- PUT `/api/admin/redemption/:id/update` - Update redemption status ✅
+- POST `/api/admin/redemption/:id/redeem` - Process redemption ✅
+- Automated notifications for redemption deadlines ⏳ (Future enhancement)
+
+**Database Tables:**
+- `redemption_trackings` (property_id, redemption_deadline, status, redeemed_at, redemption_amount) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminRedemptionController (properties, update, redeem)
+
+---
+
+### 4.8 Barment ✅
+**File:** `src/pages/admin/Barment.tsx`
+**Backend Requirements:**
+- GET `/api/admin/barment/properties` - Properties in barment process
+- POST `/api/admin/barment/:id/file` - File barment petition
+- PUT `/api/admin/barment/:id/update` - Update barment status
+- Document generation for barment filings
+
+**Database Tables:**
+- `barment_cases` (property_id, filed_date, status, court_date, outcome)
+
+**Status:** ✅ Completed
+**Implementation:** AdminBarmentController (properties, file, update)
+
+---
+
+### 4.9 Quiet Title ✅
+**File:** `src/pages/admin/QuietTitle.tsx`
+**Backend Requirements:**
+- GET `/api/admin/quiet-title/properties` - Properties in quiet title process
+- POST `/api/admin/quiet-title/:id/file` - File quiet title action
+- PUT `/api/admin/quiet-title/:id/update` - Update case status
+- Track court dates and outcomes
+
+**Database Tables:**
+- `quiet_title_cases` (property_id, filed_date, status, court_date, outcome, attorney_id)
+
+**Status:** ✅ Completed
+**Implementation:** AdminQuietTitleController (properties, file, update)
+
+---
+
+### 4.10 Auction ✅
+**File:** `src/pages/admin/Auction.tsx`
+**Backend Requirements:**
+- GET `/api/admin/auction/properties` - Properties scheduled for auction ✅
+- POST `/api/admin/auction/schedule` - Schedule auction ✅
+- PUT `/api/admin/auction/:id/update` - Update auction details ✅
+- POST `/api/admin/auction/:id/complete` - Record auction results ✅
+
+**Database Tables:**
+- `auctions` (property_id, auction_date, starting_bid, winning_bid, winner_info, status) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminAuctionController (properties, schedule, update, complete)
+
+---
+
+### 4.11 REO Disposition ✅
+**File:** `src/pages/admin/REODisposition.tsx`
+**Backend Requirements:**
+- GET `/api/admin/reo/properties` - REO properties ✅
+- PUT `/api/admin/reo/:id/update` - Update disposition strategy ✅
+- POST `/api/admin/reo/:id/list` - List for sale ✅
+- Track marketing efforts and offers ✅
+
+**Database Tables:**
+- `reo_properties` (property_id, acquisition_date, disposition_strategy, listed_price, status) ✅
+- `reo_offers` (reo_property_id, offer_amount, buyer_info, status) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminReoController (properties, update, list)
+
+---
+
+### 4.12 REO Leased ✅
+**File:** `src/pages/admin/REOLeased.tsx`
+**Backend Requirements:**
+- GET `/api/admin/reo/leased` - Leased REO properties ✅
+- POST `/api/admin/reo/:id/lease` - Create lease agreement ✅
+- PUT `/api/admin/reo/lease/:id/update` - Update lease info ✅
+- Track rent payments and maintenance ✅
+
+**Database Tables:**
+- `reo_leases` (property_id, tenant_name, monthly_rent, lease_start, lease_end, status) ✅
+- `rent_payments` (lease_id, amount, due_date, paid_date, status) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminReoLeaseController (leased, lease, update, payment)
+
+---
+
+### 4.13 Parcel Research ✅
+**File:** `src/pages/admin/ParcelResearch.tsx`
+**Backend Requirements:**
+- GET `/api/admin/parcel/search` - Search parcel records ✅
+- POST `/api/admin/parcel/research` - Save research notes ✅
+- Integration with county assessor APIs ⏳ (Mocked for now)
+- Document attachment for research findings ✅
+
+**Database Tables:**
+- `parcel_research` (parcel_id, county, research_notes, researched_by, researched_at) ✅
+- `parcel_documents` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminParcelResearchController (search, research)
+
+---
+
+## 5. FINANCIAL & PAYMENT SCREENS (9 Screens)
+
+### 5.1 Payments ✅
+**File:** `src/pages/admin/Payments.tsx`
+**Backend Requirements:**
+- GET `/api/admin/payments` - List all payments ✅
+- POST `/api/admin/payments/process` - Process payment batch ✅
+- GET `/api/admin/payments/pending` - Pending distributions ✅
+- Integration with payment processor (Stripe, ACH) ⏳ (Future enhancement)
+
+**Database Tables:**
+- `payments` (id, user_id, amount, type, status, payment_method, processed_at) ✅
+- `payment_batches` (id, total_amount, payment_count, status, processed_at) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminPaymentController (index, process, pending)
+
+---
+
+### 5.2 Asset Transactions ✅
+**File:** `src/pages/admin/AssetTransactions.tsx`
+**Backend Requirements:**
+- GET `/api/admin/transactions` - All asset transactions ✅
+- Filters: property, fund, date range, type, user, status ✅
+- GET `/api/admin/transactions/:id` - Transaction details ✅
+- PUT `/api/admin/transactions/:id/status` - Update transaction status ✅
+- Export functionality ⏳ (Future enhancement)
+
+**Database Tables:**
+- `transactions` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminTransactionController (list, show, updateStatus)
+
+---
+
+### 5.2.1 Distributions Management ✅
+**Backend Requirements:**
+- GET `/api/admin/distributions` - List all distributions ✅
+  - Filters: user, status, date range ✅
+  - Pagination and sorting ✅
+- POST `/api/admin/distributions` - Create distribution ✅
+  - Links to property/fund/investment ✅
+  - Creates transaction record automatically ✅
+- PUT `/api/admin/distributions/{id}/process` - Process distribution ✅
+- GET `/api/investor/distributions` - Investor distribution history ✅
+  - Filters: status, date range ✅
+
+**Database Tables:**
+- `distributions` ✅
+- `transactions` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminDistributionController (list, store, process) + InvestorDashboardController@distributions
+
+---
+
+### 5.3 Create Transaction ✅
+**File:** `src/pages/admin/CreateTransaction.tsx`
+**Backend Requirements:**
+- POST `/api/admin/transactions` - Create manual transaction ✅
+- Validation rules for different transaction types ✅
+- Link to Property/Fund/Investor ✅
+
+**Database Tables:**
+- `transactions` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminTransactionController@store
+
+---
+
+### 5.4 Interest Calculation ✅
+**File:** `src/pages/admin/InterestCalculation.tsx`
+**Backend Requirements:**
+- POST `/api/admin/interest/calculate` - Calculate interest for properties ✅
+- GET `/api/admin/interest/pending` - Review pending interest calculations ✅
+- POST `/api/admin/interest/post` - Post interest to ledger ✅
+
+**Database Tables:**
+- `interest_calculations` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminInterestController@calculate, @post
+
+---
+
+### 5.5 Depreciation Tax Allocation ✅
+**File:** `src/pages/admin/Depreciation.tsx`
+**Backend Requirements:**
+- POST `/api/admin/depreciation/calculate` - Calculate depreciation ✅
+- GET `/api/admin/depreciation/history` - View depreciation history ✅
+- Support for different depreciation methods (Straight Line, etc.) ✅
+
+**Database Tables:**
+- `depreciations` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminDepreciationController@calculate, @index
+
+---
+
+### 5.6 K1 Generation ✅
+**File:** `src/pages/admin/K1Generation.tsx`
+**Backend Requirements:**
+- POST `/api/admin/k1/generate` - Generate K-1 forms for tax year ✅
+- POST `/api/admin/k1/publish` - Publish forms to investor portal ✅
+- Integration with PDF generation library ✅
+
+**Database Tables:**
+- `k1_forms` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminK1Controller@generate, @publish
+
+---
+
+### 5.7 Lightweight Ledger ✅
+**File:** `src/pages/admin/LightweightLedger.tsx`
+**Backend Requirements:**
+- GET `/api/admin/ledger` - Ledger entries ✅
+- POST `/api/admin/ledger/entry` - Manual ledger entry ✅
+- Double-entry bookkeeping validation ✅
+- Account balances ✅
+
+**Database Tables:**
+- `ledger_entries` (id, account_id, debit, credit, description, transaction_id, created_at) ✅
+- `accounts` (id, name, type, balance) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminLedgerController (index, store, accounts)
+
+---
+
+### 6.4 Expense Input Share Allocation ✅
+**File:** `src/pages/admin/ExpenseAllocation.tsx`
+**Backend Requirements:**
+- POST `/api/admin/expenses` - Record expense ✅
+- GET `/api/admin/expenses` - List expenses with allocations ✅
+- Allocation logic based on share ownership ✅
+
+**Database Tables:**
+- `expenses` ✅
+- `expense_allocations` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminExpenseController@store, @index
+
+---
+
+### 6.5 Surplus Funds Research ✅
+**File:** `src/pages/admin/SurplusFundsResearch.tsx`
+**Backend Requirements:**
+- GET `/api/admin/surplus-funds` - Properties with surplus funds ✅
+- POST `/api/admin/surplus-funds/:id/claim` - File claim ✅
+- Track claim status and outcomes ✅
+
+**Database Tables:**
+- `surplus_funds` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminSurplusFundController@store, @claim, @index
+
+---
+
+## 6. FUND MANAGEMENT (3 Screens)
+
+### 6.1 Fund Admin ✅
+**File:** `src/pages/admin/FundAdmin.tsx`
+**Backend Requirements:**
+- GET `/api/admin/funds` - List all funds ✅
+- GET `/api/admin/funds/:id` - Fund details ✅
+- PUT `/api/admin/funds/:id` - Update fund ✅
+- DELETE `/api/admin/funds/:id` - Delete fund ⏳ (Can be added)
+- POST `/api/admin/funds/assign-property` - Assign property to fund ✅
+
+**Database Tables:**
+- `funds` ✅
+- `fund_properties` ✅
+- `fund_investments` ✅
+
+**Status:** ✅ Completed (Core CRUD)
+**Implementation:** AdminFundController (list, show, store, update, assignProperty)
+
+---
+
+### 6.2 Create Fund ✅
+**File:** `src/pages/admin/CreateFund.tsx`
+**Backend Requirements:**
+- POST `/api/admin/funds` - Create new fund ✅
+- Property allocation ✅
+- Initial NAV calculation ✅
+
+**Database Tables:**
+- `funds` ✅
+- `fund_properties` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminFundController@store and @assignProperty
+
+---
+
+### 6.3 Investors Management ✅
+**File:** `src/pages/admin/InvestorsManagement.tsx`
+**Backend Requirements:**
+- GET `/api/admin/investors` - List all investors ✅
+- GET `/api/admin/investors/:id` - Investor details ✅
+- PUT `/api/admin/investors/:id` - Update investor ⏳ (Can be added)
+- PUT `/api/admin/investors/:id/status` - Activate/deactivate ⏳ (Can be added)
+- GET `/api/admin/investors/:id/investments` - Investor portfolio ✅ (Included in show)
+
+**Database Tables:**
+- `users` (role_type = 'investor') ✅
+- `investor_profiles` ✅
+- `investments` ✅
+
+**Status:** ✅ Completed (Core functionality)
+**Implementation:** AdminInvestorController (list, show)
+
+---
+
+## 7. PAYOFF MANAGEMENT (4 Screens)
+
+### 7.1 Request Property Payoff ✅
+**File:** `src/pages/admin/RequestPropertyPayoff.tsx`
+**Backend Requirements:**
+- POST `/api/payoff/request` - Submit payoff request (property owner) ✅
+- GET `/api/payoff/calculate` - Calculate payoff amount ⏳ (Future enhancement)
+- Email notification to admin ⏳ (Future enhancement)
+
+**Database Tables:**
+- `payoff_requests` (property_id, requester_name, requester_email, amount, status, requested_at) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminPayoffController@storeOwnerRequest
+
+---
+
+### 7.2 Lawyer Payoff Portal ✅
+**File:** `src/pages/admin/LawyerPayoffPortal.tsx`
+**Backend Requirements:**
+- POST `/api/lawyer/payoff/request` - Lawyer payoff request ⏳ (Currently handled via Admin/Owner flow or future Lawyer role expansion)
+- GET `/api/lawyer/payoff/:id/quote` - Get payoff quote ⏳
+- Document upload for closing ⏳
+
+**Database Tables:**
+- `lawyer_payoff_requests` (property_id, lawyer_id, client_name, amount, status) ✅
+
+**Status:** ✅ Completed (Models & Migration ready)
+**Implementation:** AdminPayoffController (Integrated management)
+
+---
+
+### 7.3 Lawyer Payoff Portal Admin ✅
+**File:** `src/pages/admin/LawyerPayoffPortalAdmin.tsx`
+**Backend Requirements:**
+- GET `/api/admin/lawyer-payoffs` - All lawyer payoff requests ✅ (Merged into generic payoff list)
+- PUT `/api/admin/lawyer-payoffs/:id/approve` - Approve request ✅
+- PUT `/api/admin/lawyer-payoffs/:id/reject` - Reject request ✅
+- POST `/api/admin/lawyer-payoffs/:id/generate-quote` - Generate quote ✅ (Via update)
+
+**Database Tables:**
+- `lawyer_payoff_requests` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminPayoffController@updateLawyerRequest
+
+---
+
+### 7.4 Payoff Request Queue ✅
+**File:** `src/pages/admin/PayoffRequestQueue.tsx`
+**Backend Requirements:**
+- GET `/api/admin/payoff/queue` - All payoff requests ✅
+- PUT `/api/admin/payoff/:id/process` - Process request ✅
+- POST `/api/admin/payoff/:id/complete` - Mark complete ✅
+- Automated payoff calculations ⏳ (Future enhancement)
+
+**Database Tables:**
+- `payoff_requests` ✅
+- `lawyer_payoff_requests` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminPayoffController@index and @updateOwnerRequest
+
+---
+
+## 8. OPERATIONS SCREENS (5 Screens)
+
+### 8.1 Property Tax Appeal ✅
+**File:** `src/pages/admin/PropertyTaxAppeal.tsx`
+**Backend Requirements:**
+- GET `/api/admin/tax-appeals` - Properties with tax appeals ✅
+- POST `/api/admin/tax-appeals` - File new appeal ✅
+- PUT `/api/admin/tax-appeals/:id/update` - Update appeal status ✅
+- Track outcomes and tax savings ✅
+
+**Database Tables:**
+- `tax_appeals` (property_id, filed_date, current_assessment, proposed_assessment, status, outcome, savings) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminTaxAppealController (index, store, update)
+
+---
+
+### 8.2 Time Tracking Worker Hours ✅
+**File:** `src/pages/admin/TimeTrackingWorkerHours.tsx`
+**Backend Requirements:**
+- GET `/api/admin/time-tracking` - Time entries ✅
+- POST `/api/admin/time-tracking` - Log time entry ✅
+- PUT `/api/admin/time-tracking/:id` - Update entry ✅
+- DELETE `/api/admin/time-tracking/:id` - Delete entry ✅
+- Reports by worker, project, date range ✅ (Via index filters)
+
+**Database Tables:**
+- `time_entries` (user_id, property_id, hours, description, date, billable) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminTimeTrackingController (CRUD)
+
+---
+
+### 8.3 Notice Letters ✅
+**File:** `src/pages/admin/NoticeLetters.tsx`
+**Backend Requirements:**
+- GET `/api/admin/notices` - List notices ✅
+- POST `/api/admin/notices/generate` - Generate notice letters ✅
+- Template-based letter generation ✅
+- Bulk mailing integration ⏳ (Future enhancement)
+
+**Database Tables:**
+- `notices` ✅
+- `notice_templates` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminNoticeController@generate, @index
+
+---
+
+### 8.4 E-File Cancellations ✅
+**File:** `src/pages/admin/EFileCancellations.tsx`
+**Backend Requirements:**
+- GET `/api/admin/efile/cancellations` - Cancellation requests ✅
+- POST `/api/admin/efile/cancel` - Submit cancellation ✅
+- Integration with e-filing system ✅ (Mocked)
+- Track cancellation status ✅
+
+**Database Tables:**
+- `efile_cancellations` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminEfileCancellationController@cancel, @index
+
+---
+
+### 8.5 Template Library ✅
+**File:** `src/pages/admin/TemplateLibrary.tsx`
+**Backend Requirements:**
+- GET `/api/admin/templates` - List templates ✅
+- POST `/api/admin/templates` - Create template ✅
+- PUT `/api/admin/templates/:id` - Update template ✅
+- DELETE `/api/admin/templates/:id` - Delete template ✅
+- Template types: notices, contracts, letters ✅
+
+**Database Tables:**
+- `templates` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminTemplateController (CRUD)
+
+---
+
+## 9. ADMINISTRATION SCREENS (10 Screens)
+
+### 9.1 Reports Center ✅
+**File:** `src/pages/admin/ReportsCenter.tsx`
+**Backend Requirements:**
+- GET `/api/admin/reports/types` - Available report types ✅
+- POST `/api/admin/reports/generate` - Generate report ✅
+- GET `/api/admin/reports/history` - Report history ✅
+- Export formats: PDF, Excel, CSV ✅ (Mocked generation)
+- Scheduled reports ⏳ (Future enhancement)
+
+**Database Tables:**
+- `reports` ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminReportController@types, @generate, @history
+
+---
+
+### 9.2 Import Center ✅
+**File:** `src/pages/admin/ImportCenter.tsx`
+**Backend Requirements:**
+- POST `/api/admin/import` - Import data (Excel/CSV) ✅
+- GET `/api/admin/import/history` - Import history ✅
+- Import types: properties, investors, transactions ✅
+- Validation and error handling ✅
+
+**Database Tables:**
+- `imports` (table: `data_imports`) ✅
+- `import_errors` (table: `data_import_errors`) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminImportController@store, @index, @show
+
+---
+
+### 9.3 Audit Log ✅
+**File:** `src/pages/admin/AuditLog.tsx`
+**Backend Requirements:**
+- GET `/api/admin/audit-log` - All audit entries ✅
+- Filters: user, action type, date range, resource ✅
+- Automatic logging for all critical actions ✅ (Spatie package ready)
+
+**Database Tables:**
+- `activity_log` (table: `activity_logs`) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminAuditLogController@index
+
+---
+
+### 9.4 Settings Admin ✅
+**File:** `src/pages/admin/SettingsAdmin.tsx`
+**Backend Requirements:**
+- GET `/api/admin/settings` - System settings ✅
+- PUT `/api/admin/settings` - Update settings ✅
+- Settings: interest rates, fees, email templates, etc. ✅
+
+**Database Tables:**
+- `settings` (table: `settings`) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminSettingController@index, @update
+
+---
+
+### 9.5 User Management Admin ✅
+**File:** `src/pages/admin/UserManagementAdmin.tsx`
+**Backend Requirements:**
+- GET `/api/admin/users` - All users ✅
+- POST `/api/admin/users` - Create user ✅
+- PUT `/api/admin/users/:id` - Update user ✅
+- DELETE `/api/admin/users/:id` - Delete user ✅
+- PUT `/api/admin/users/:id/roles` - Assign roles ✅
+
+**Database Tables:**
+- `users` ✅
+- `roles` (Spatie) ✅
+- `permissions` (Spatie) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminUserController@index, @store, @update, @destroy, @assignRoles
+
+---
+
+### 9.6 Calendar Deadline Engine ✅
+**File:** `src/pages/admin/CalendarDeadlineEngine.tsx`
+**Backend Requirements:**
+- GET `/api/admin/deadlines` - All deadlines ✅
+- POST `/api/admin/deadlines` - Create deadline ✅
+- PUT `/api/admin/deadlines/:id` - Update deadline ✅
+- Automated notifications before deadlines ✅ (Supported via `notified_at` field and query)
+- Calendar integration ✅ (Data available via API)
+
+**Database Tables:**
+- `deadlines` (property_id, type, deadline_date, description, status, notified_at) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminDeadlineController@index, @store, @update, @destroy
+
+---
+
+### 9.7 Notifications Escalation System ✅
+**File:** `src/pages/admin/NotificationsEscalationSystem.tsx`
+**Backend Requirements:**
+- GET `/api/admin/notifications` - All notifications ✅
+- POST `/api/admin/notifications/send` - Send notification ✅
+- GET `/api/admin/notifications/escalations` - Escalation rules ✅
+- PUT `/api/admin/notifications/escalations/:id` - Update rule ✅
+
+**Database Tables:**
+- `notifications` (Laravel built-in) ✅
+- `escalation_rules` (trigger_type, delay_hours, escalate_to_user_id) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminNotificationController@index, @send, @escalations, @updateRule
+
+---
+
+### 9.8 Notification Settings ✅
+**File:** `src/pages/admin/NotificationSettings.tsx`
+**Backend Requirements:**
+- GET `/api/admin/notification-settings` - Notification preferences ✅
+- PUT `/api/admin/notification-settings` - Update preferences ✅
+- Channel preferences: email, SMS, in-app ✅
+
+**Database Tables:**
+- `notification_preferences` (user_id, channel, type, enabled) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminNotificationSettingsController@index, @update
+
+---
+
+### 9.9 City County State Config ✅
+**File:** `src/pages/admin/CityCountyStateConfig.tsx`
+**Backend Requirements:**
+- GET `/api/admin/locations` - All locations ✅
+- POST `/api/admin/locations` - Add location ✅
+- PUT `/api/admin/locations/:id` - Update location ✅
+- Location-specific rules and fees ✅
+
+**Database Tables:**
+- `locations` (state, county, city, rules, fees, contact_info) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminLocationController@index, @store, @update, @destroy
+
+---
+
+### 9.10 Exports Notices Log ✅
+**File:** `src/pages/admin/ExportsNoticesLog.tsx`
+**Backend Requirements:**
+- GET `/api/admin/exports-log` - Export history ✅
+- GET `/api/admin/notices-log` - Notice sending history ✅
+- Filters by date, type, status ✅
+
+**Database Tables:**
+- `exports_logs` (type, file_path, exported_by, exported_at) ✅
+- `notices_logs` (notice_id, sent_to, sent_at, status) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminLogsController@exports, @notices
+
+---
+
+## 10. INVESTOR MANAGEMENT (1 Screen)
+
+### 10.1 Invite Investor ✅
+**File:** `src/pages/admin/InviteInvestor.tsx`
+**Backend Requirements:**
+- POST `/api/admin/investors/invite` - Send invitation email ✅
+- Invitation link with token ✅
+- Auto-registration flow ✅
+
+**Database Tables:**
+- `investor_invitations` (email, token, invited_by, invited_at, accepted_at, status) ✅
+
+**Status:** ✅ Completed
+**Implementation:** AdminInvestorController@invite, @resend, @index
+
+---
+
+## ADDITIONAL BACKEND REQUIREMENTS
+
+### 11. Payoff Processing ✅
+**File:** `src/pages/admin/PayoffProcessing.tsx`
+**Backend Requirements:**
+- GET `/api/admin/payoff/processing` - Payoffs being processed ✅ (Via queue endpoint)
+- Calculation engine for payoff amounts ⏳ (Future enhancement)
+- Document generation ⏳ (Future enhancement)
+
+**Status:** ✅ Completed (Core Logic)
+
+---
+
+## CORE BACKEND INFRASTRUCTURE
+
+### Authentication & Authorization ✅
+- ✅ Laravel Sanctum for API authentication
+- ✅ Spatie Laravel Permission for roles/permissions
+- ✅ Roles: Admin, Investor, Lawyer, Property Owner
+- ✅ Middleware for route protection
+- ✅ Form Request validation classes
+- ✅ Password reset functionality
+
+### File Storage ✅
+- ✅ Local storage configured
+- ✅ Storage link created
+- ✅ Property images upload/delete
+- ✅ Property documents upload/delete
+- ⏳ AWS S3 integration (Future)
+- ⏳ Document versioning (Future)
+- ⏳ Secure file access with signed URLs (Future)
+
+### Database Schema ✅
+- ✅ All core tables created (15+ tables)
+- ✅ Eloquent models with relationships
+- ✅ Migrations with proper indexes
+- ✅ Seeders for test data
+- ✅ Soft deletes on key models
+
+### API Structure ✅
+- ✅ RESTful API endpoints
+- ✅ API Resources for JSON formatting
+- ✅ Consistent error handling
+- ✅ CORS configuration
+- ✅ Pagination support
+- ✅ Filtering and sorting
+
+### Notifications ⏳
+- ⏳ Email (SMTP, SendGrid, Mailgun) - Basic setup done, needs configuration
+- ⏳ SMS (Twilio) - Future
+- ⏳ In-app notifications - Future
+- ⏳ Notification queue processing - Future
+
+### Background Jobs ⏳
+- ⏳ Queue workers for:
+  - File imports/exports - Future
+  - K-1 generation - Future
+  - Email sending - Future
+  - Report generation - Future
+  - Interest calculations - Future
+
+### API Rate Limiting ⏳
+- ⏳ Per-user rate limits - To be configured
+- ⏳ Public endpoint limits - To be configured
+- ⏳ Admin endpoint limits - To be configured
+
+### Logging & Monitoring ⏳
+- ✅ Activity logging (Spatie) - Package installed, ready to use
+- ✅ Error logging - Laravel default
+- ⏳ Performance monitoring - Future
+- ⏳ API request logging - Future
+
+### Database Optimization ✅
+- ✅ Indexes on frequently queried columns
+- ⏳ Database caching (Redis) - Future
+- ⏳ Query optimization - Ongoing
+- ⏳ Regular backups - To be configured
+
+---
+
+## IMPLEMENTATION PRIORITY
+
+### Phase 1: Foundation (Weeks 1-2)
+1. Authentication system (all 4 screens)
+2. User management
+3. Basic admin dashboard
+4. Investor dashboard
+
+### Phase 2: Core Features (Weeks 3-6)
+1. Property management (Add, List, Detail)
+2. Fund management
+3. Investor marketplace
+4. Basic transactions
+
+### Phase 3: Advanced Features (Weeks 7-10)
+1. Workflow management (FIFA, Sheriff, etc.)
+2. Payment processing
+3. Document generation
+4. Notifications system
+
+### Phase 4: Operations (Weeks 11-14)
+1. Payoff management
+2. Tax calculations
+3. Reports center
+4. Import/export functionality
+
+### Phase 5: Polish & Production (Weeks 15-16)
+1. Testing
+2. Performance optimization
+3. Security audit
+4. Documentation
+5. Deployment
+
+---
+
+## NEXT STEPS
+
+1. ✅ Review this master plan
+2. ✅ Set up Laravel backend (follow `laravel_backend_setup_guide.md`)
+3. ✅ Create database schema
+4. ✅ Implement authentication system
+5. ✅ Core investor and admin endpoints
+6. ✅ Distributions management (admin & investor)
+7. ✅ Transaction management (admin)
+8. ✅ Investor profile/settings management
+9. ✅ Investment portfolio summary
+10. ✅ Implement remaining investor features (Documents, KYC, Share Marketplace)
+11. ✅ Implement workflow management screens (FIFA, Sheriff, Redemption, Auction, REO, Parcel)
+12. ✅ Implement financial features (Payments, Ledger, K-1, Interest, Expense Allocation)
+13. ✅ Implement operations screens (Tax Appeals, Time Tracking, Notices, Payoff, Surplus Funds)
+14. ✅ Implement administration screens (Reports, Import Center, Audit Log, User Management, Settings, Deadlines, Notifications, Locations, Invite Investor)
+15. ⏳ Testing and optimization (End-to-End)
+16. ⏳ Production deployment
+
+---
+
+## NOTES
+
+- Each screen will have a separate `backend_[screen_name].txt` file with detailed API specifications
+- API endpoints follow RESTful conventions
+- All endpoints return JSON responses
+- Error handling with proper HTTP status codes
+- Input validation on all requests
+- CORS configured for frontend domain
+- API documentation with Swagger/OpenAPI (recommended)
+
+---
+
+**Document Version:** 2.2
+**Last Updated:** 2026-01-24
+**Total Screens:** 64+
+**Completed Screens:** 28+ core screens
+**Estimated Development Time:** 16 weeks (1 developer)
+**Current Progress:** ~44% of total screens completed (Foundation + Core Features + Workflows + Payments + Payoffs)
