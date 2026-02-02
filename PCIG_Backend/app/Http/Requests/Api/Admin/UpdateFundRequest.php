@@ -26,7 +26,7 @@ class UpdateFundRequest extends FormRequest
             'total_shares' => 'nullable|integer|min:0',
             'available_shares' => 'nullable|integer|min:0',
             'price_per_share' => 'nullable|numeric|min:0',
-            'status' => 'nullable|in:open,closed,fully_subscribed',
+            'status' => 'nullable|in:open,closed,fully_subscribed,coming_soon,liquidating',
             'launch_date' => 'nullable|date',
             'close_date' => 'nullable|date',
             'strategy' => 'nullable|string|max:100',

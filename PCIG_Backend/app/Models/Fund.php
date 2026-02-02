@@ -15,6 +15,7 @@ class Fund extends Model
         'fund_code',
         'slug',
         'description',
+        'image_path',
         'min_investment',
         'current_nav',
         'total_assets',
@@ -27,8 +28,11 @@ class Fund extends Model
         'lock_up_period',
         'performance_metric',
         'management_fee',
+        'performance_fee',
         'cap',
         'launch_date',
+        'prospectus_path',
+        'term_sheet_path',
     ];
 
     protected $casts = [
@@ -39,6 +43,7 @@ class Fund extends Model
         'price_per_share' => 'decimal:2',
         'performance_metric' => 'decimal:2',
         'management_fee' => 'decimal:2',
+        'performance_fee' => 'decimal:2',
         'launch_date' => 'date',
     ];
 

@@ -1,4 +1,5 @@
-import React, { CSSProperties, useState, useEffect } from 'react';
+import React, { CSSProperties, useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Clock,
   Upload,
@@ -39,6 +40,7 @@ export default function EFileCancellations() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All Statuses');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   // Date filter state if needed, though backend support might be limited
   // const [dateFilter, setDateFilter] = useState('Last 30 Days');
 
@@ -76,7 +78,7 @@ export default function EFileCancellations() {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, statusFilter]);
+  }, [searchQuery, statusFilter, refreshTrigger]);
 
   // Extract data from state with safe defaults
   const header = data?.header || {
@@ -94,27 +96,31 @@ export default function EFileCancellations() {
     headers: [],
     rows: []
   };
-  const detailPanel = data?.detailPanel || {
-    title: 'Request Details',
-    cancellationDetails: { title: 'Cancellation Details', fields: [] },
-    requiredDocuments: { title: 'Required Documents', documents: [] },
-    efileStatus: { title: 'E-File Status', timeline: [] },
-    gscccaIntegration: { title: 'GSCCCA Integration', primaryAction: {}, secondaryActions: [] }
-  };
 
   const [selectedCancellations, setSelectedCancellations] = useState<Set<string>>(new Set());
   const [selectedCancellationId, setSelectedCancellationId] = useState<string>('');
+  
+  const selectedCancellation = cancellationsTable.rows.find((r: any) => r.id === selectedCancellationId) || null;
+
+  const [searchParams] = useSearchParams();
+  const urlCancellationId = searchParams.get('cancellation_id');
 
   useEffect(() => {
     if (cancellationsTable.rows.length > 0) {
-      // If no selection or current selection not in new list, select first
-      if (!selectedCancellationId || !cancellationsTable.rows.find((r: any) => r.id === selectedCancellationId)) {
+      // Prioritize URL param if present and valid
+      if (urlCancellationId && cancellationsTable.rows.some((r: any) => r.id === urlCancellationId)) {
+        if (selectedCancellationId !== urlCancellationId) {
+             setSelectedCancellationId(urlCancellationId);
+        }
+      } 
+      // Else if no selection or current selection not in new list, select first
+      else if (!selectedCancellationId || !cancellationsTable.rows.find((r: any) => r.id === selectedCancellationId)) {
         setSelectedCancellationId(cancellationsTable.rows[0].id);
       }
     } else {
         setSelectedCancellationId('');
     }
-  }, [cancellationsTable.rows, selectedCancellationId]);
+  }, [cancellationsTable.rows, selectedCancellationId, urlCancellationId]);
 
   const handleCheckboxChange = (cancellationId: string) => {
     setSelectedCancellations((prev) => {
@@ -140,7 +146,146 @@ export default function EFileCancellations() {
     setSelectedCancellationId(cancellationId);
   };
 
-  const selectedCancellation = cancellationsTable.rows.find((r: any) => r.id === selectedCancellationId) || null;
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleBatchClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleBatchFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch('http://localhost:8000/api/admin/efile/batch-efile', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+
+      if (response.ok) {
+        setRefreshTrigger(prev => prev + 1);
+      } else {
+        alert('Failed to upload batch file');
+      }
+    } catch (error) {
+      console.error('Error uploading batch file:', error);
+      alert('Error uploading batch file');
+    }
+  };
+
+  const handleSubmitToGsccca = async () => {
+    if (!selectedCancellationId) return;
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`http://localhost:8000/api/admin/efile/${selectedCancellationId}/submit-gsccca`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        if (response.ok) {
+            setRefreshTrigger(prev => prev + 1);
+        }
+    } catch (e) {
+        console.error(e);
+    }
+  };
+
+  const handleCheckStatus = async () => {
+    if (!selectedCancellationId) return;
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`http://localhost:8000/api/admin/efile/${selectedCancellationId}/check-status`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            }
+        });
+        if (response.ok) {
+            setRefreshTrigger(prev => prev + 1);
+        }
+    } catch (e) {
+        console.error(e);
+    }
+  };
+
+  const handleViewXml = async () => {
+    if (!selectedCancellationId) return;
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`http://localhost:8000/api/admin/efile/${selectedCancellationId}/view-xml`, {
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await response.json();
+        if (data.success) {
+            const blob = new Blob([data.xml_content], { type: 'text/xml' });
+            const url = URL.createObjectURL(blob);
+            window.open(url, '_blank');
+        } else {
+            alert(data.message || 'Failed to retrieve XML');
+        }
+    } catch (error) {
+        console.error(error);
+        alert('Error fetching XML');
+    }
+  };
+
+  const detailPanel = {
+    title: 'Request Details',
+    cancellationDetails: { 
+        title: 'Cancellation Details', 
+        fields: [
+            { label: 'Request ID', value: selectedCancellation?.detail_id || '-' },
+            { label: 'Request Date', value: selectedCancellation?.detail_requested_at || '-' },
+            { label: 'Reason', value: selectedCancellation?.detail_reason || '-' },
+            { label: 'Requested By', value: selectedCancellation?.detail_requested_by || '-' }
+        ] 
+    },
+    requiredDocuments: { 
+        title: 'Required Documents', 
+        status: 'Pending Upload',
+        statusBg: '#FEF3C7',
+        statusColor: '#D97706',
+        uploadButton: 'Upload Document',
+        documents: [
+            { id: 1, name: 'Cancellation Request Form', icon: 'FileText' },
+            { id: 2, name: 'Proof of Payment', icon: 'FileCheck' }
+        ]
+    },
+    efileStatus: { 
+        title: 'E-File Status', 
+        timeline: [
+            { id: 1, label: 'Request Created', date: selectedCancellation?.created_at_fmt || '-', status: 'completed', statusColor: '#2563EB' },
+            { id: 2, label: 'Submitted to County', date: selectedCancellation?.submitted_at || 'Pending', status: selectedCancellation?.gsccca_status === 'submitted' || selectedCancellation?.gsccca_status === 'accepted' ? 'completed' : 'pending', statusColor: '#2563EB' },
+            { id: 3, label: 'County Accepted', date: selectedCancellation?.status === 'cancelled' ? 'Accepted' : 'Pending', status: selectedCancellation?.status === 'cancelled' ? 'completed' : 'pending', statusColor: '#16A34A' }
+        ]
+    },
+    gscccaIntegration: { 
+        title: 'GSCCCA Integration', 
+        apiStatus: selectedCancellation?.gsccca_status === 'submitted' ? 'Submitted' : selectedCancellation?.gsccca_status === 'accepted' ? 'Accepted' : 'Pending',
+        apiStatusBg: selectedCancellation?.gsccca_status === 'submitted' ? '#EFF6FF' : selectedCancellation?.gsccca_status === 'accepted' ? '#DCFCE7' : '#F1F5F9',
+        apiStatusColor: selectedCancellation?.gsccca_status === 'submitted' ? '#2563EB' : selectedCancellation?.gsccca_status === 'accepted' ? '#16A34A' : '#64748B',
+        primaryAction: { 
+            label: selectedCancellation?.gsccca_status === 'pending' ? 'Submit to GSCCCA' : selectedCancellation?.gsccca_status === 'submitted' ? 'Check Status' : 'View Status',
+            bg: '#2563EB',
+            color: '#FFFFFF',
+            onClick: selectedCancellation?.gsccca_status === 'pending' ? handleSubmitToGsccca : handleCheckStatus
+        }, 
+        secondaryActions: [
+            { label: 'View XML Preview', icon: 'FileText', bg: '#FFFFFF', color: '#64748B', onClick: handleViewXml },
+            { label: 'Check Status', icon: 'Clock', bg: '#FFFFFF', color: '#64748B', onClick: handleCheckStatus }
+        ]
+    }
+  };
 
   const pageWrapperStyle: CSSProperties = {
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -242,28 +387,14 @@ export default function EFileCancellations() {
                   </p>
                 </div>
                 <div style={{ display: 'flex', gap: isMobile ? 8 : 12, flexDirection: isMobile ? 'column' : 'row', width: isMobile ? '100%' : 'auto' }}>
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleBatchFileChange}
+                    style={{ display: 'none' }}
+                  />
                   <button
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: isMobile ? '8px 16px' : '10px 20px',
-                      borderRadius: 8,
-                      border: '1px solid #E2E8F0',
-                      backgroundColor: '#FFFFFF',
-                      color: '#64748B',
-                      fontSize: isMobile ? 13 : 14,
-                      fontWeight: 500,
-                      cursor: 'pointer',
-                      width: isMobile ? '100%' : 'auto',
-                      justifyContent: isMobile ? 'center' : 'flex-start',
-                      boxSizing: 'border-box'
-                    }}
-                  >
-                    <SettingsIcon style={{ width: isMobile ? 14 : 16, height: isMobile ? 14 : 16, flexShrink: 0 }} />
-                    <span style={{ whiteSpace: 'nowrap' }}>{header.actionButtons?.[0]?.label || 'Settings'}</span>
-                  </button>
-                  <button
+                    onClick={handleBatchClick}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -282,7 +413,7 @@ export default function EFileCancellations() {
                     }}
                   >
                     <BatchEFileIcon style={{ width: isMobile ? 14 : 16, height: isMobile ? 14 : 16, flexShrink: 0 }} />
-                    <span style={{ whiteSpace: 'nowrap' }}>{header.actionButtons?.[1]?.label || 'Batch E-File'}</span>
+                    <span style={{ whiteSpace: 'nowrap' }}>Batch E-File</span>
                   </button>
                 </div>
               </div>
@@ -1113,6 +1244,7 @@ export default function EFileCancellations() {
                 </span>
               </div>
               <button
+                onClick={detailPanel.gscccaIntegration.primaryAction.onClick}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1140,6 +1272,7 @@ export default function EFileCancellations() {
                   return (
                     <button
                       key={idx}
+                      onClick={action.onClick}
                       style={{
                         display: 'inline-flex',
                         alignItems: 'center',

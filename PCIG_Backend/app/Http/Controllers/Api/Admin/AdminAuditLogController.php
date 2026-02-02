@@ -14,77 +14,13 @@ class AdminAuditLogController extends Controller
     {
         // Calculate summary stats
         $totalEvents = ActivityLog::count();
-        $todayEvents = ActivityLog::whereDate('created_at', Carbon::today())->count();
-        // Mock error rate as we don't have a status column in standard activity log usually, unless properties['status'] exists
-        // Assuming log_name 'error' or description containing 'failed' counts as error
-        $errorCount = ActivityLog::where('description', 'like', '%fail%')
-            ->orWhere('description', 'like', '%error%')
-            ->count();
-        $errorRate = $totalEvents > 0 ? round(($errorCount / $totalEvents) * 100, 1) . '%' : '0%';
-
+        
         $logs = ActivityLog::with('causer')
             ->latest()
             ->limit(50) // Limit for dashboard view
             ->get()
             ->map(function ($log) {
-                // User Initials
-                $userName = $log->causer ? $log->causer->name : 'System';
-                $initials = collect(explode(' ', $userName))->map(fn($s) => strtoupper(substr($s, 0, 1)))->take(2)->implode('');
-                
-                // Action Type Logic
-                $actionLabel = 'Action';
-                $actionBg = '#F1F5F9';
-                $actionColor = '#64748B';
-                
-                $descLower = strtolower($log->description);
-                if (str_contains($descLower, 'create') || str_contains($descLower, 'add')) {
-                    $actionLabel = 'Create';
-                    $actionBg = '#DCFCE7';
-                    $actionColor = '#16A34A';
-                } elseif (str_contains($descLower, 'update') || str_contains($descLower, 'edit')) {
-                    $actionLabel = 'Update';
-                    $actionBg = '#DBEAFE';
-                    $actionColor = '#2563EB';
-                } elseif (str_contains($descLower, 'delete') || str_contains($descLower, 'remove')) {
-                    $actionLabel = 'Delete';
-                    $actionBg = '#FEE2E2';
-                    $actionColor = '#DC2626';
-                } elseif (str_contains($descLower, 'login') || str_contains($descLower, 'logged')) {
-                    $actionLabel = 'Login';
-                    $actionBg = '#F3E8FF';
-                    $actionColor = '#9333EA';
-                }
-
-                return [
-                    'id' => $log->id,
-                    'timestamp' => [
-                        'date' => $log->created_at->format('M d, Y'),
-                        'time' => $log->created_at->format('h:i A')
-                    ],
-                    'user' => [
-                        'name' => $userName,
-                        'initials' => $initials,
-                        'bg' => '#F1F5F9', // Default, could be dynamic
-                        'color' => '#475569'
-                    ],
-                    'actionType' => [
-                        'label' => $actionLabel,
-                        'bg' => $actionBg,
-                        'color' => $actionColor
-                    ],
-                    'description' => [
-                        'title' => ucfirst($log->description),
-                        'subtitle' => $log->subject_type ? class_basename($log->subject_type) . ' #' . $log->subject_id : 'System Event'
-                    ],
-                    'entity' => [
-                        'primary' => $log->subject_type ? class_basename($log->subject_type) : 'System',
-                        'secondary' => $log->subject_id ? 'ID: ' . $log->subject_id : null
-                    ],
-                    'status' => [
-                        'label' => 'Success', // Mock
-                        'color' => '#16A34A'
-                    ]
-                ];
+                return $this->formatLog($log);
             });
 
         return response()->json([
@@ -98,17 +34,20 @@ class AdminAuditLogController extends Controller
                     [
                         'label' => 'All Actions',
                         'options' => ['Login', 'Update', 'Delete', 'Create', 'Export'],
-                        'icon' => 'Filter'
+                        'icon' => 'Filter',
+                        'key' => 'action_type'
                     ],
                     [
                         'label' => 'All Users',
                         'options' => ['Admin', 'Manager', 'Investor', 'System'],
-                        'icon' => 'Users'
+                        'icon' => 'Users',
+                        'key' => 'user_role'
                     ],
                     [
                         'label' => 'Date Range',
                         'options' => ['Today', 'Last 7 Days', 'Last 30 Days', 'Custom'],
-                        'icon' => 'Calendar'
+                        'icon' => 'Calendar',
+                        'key' => 'date_range'
                     ]
                 ],
                 'summary' => [
@@ -138,14 +77,106 @@ class AdminAuditLogController extends Controller
                   ->where('causer_type', 'App\Models\User');
         }
 
-        if ($request->has('action_type')) {
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('description', 'like', "%{$search}%")
+                  ->orWhereHas('causer', function($q) use ($search) {
+                      $q->where('name', 'like', "%{$search}%");
+                  });
+            });
+        }
+
+        if ($request->filled('action_type') && $request->action_type !== 'All Actions') {
             $query->where('description', 'like', '%' . $request->action_type . '%');
+        }
+
+        if ($request->filled('date_range')) {
+            switch ($request->date_range) {
+                case 'Today':
+                    $query->whereDate('created_at', Carbon::today());
+                    break;
+                case 'Last 7 Days':
+                    $query->where('created_at', '>=', Carbon::now()->subDays(7));
+                    break;
+                case 'Last 30 Days':
+                    $query->where('created_at', '>=', Carbon::now()->subDays(30));
+                    break;
+            }
         }
 
         if ($request->has('date_from') && $request->has('date_to')) {
             $query->whereBetween('created_at', [$request->date_from, $request->date_to]);
         }
 
-        return response()->json($query->latest()->paginate(20));
+        $paginator = $query->latest()->paginate(20);
+        
+        $paginator->getCollection()->transform(function ($log) {
+            return $this->formatLog($log);
+        });
+
+        return response()->json($paginator);
+    }
+
+    private function formatLog($log)
+    {
+        // User Initials
+        $userName = $log->causer ? $log->causer->name : 'System';
+        $initials = collect(explode(' ', $userName))->map(fn($s) => strtoupper(substr($s, 0, 1)))->take(2)->implode('');
+        
+        // Action Type Logic
+        $actionLabel = 'Action';
+        $actionBg = '#F1F5F9';
+        $actionColor = '#64748B';
+        
+        $descLower = strtolower($log->description);
+        if (str_contains($descLower, 'create') || str_contains($descLower, 'add')) {
+            $actionLabel = 'Create';
+            $actionBg = '#DCFCE7';
+            $actionColor = '#16A34A';
+        } elseif (str_contains($descLower, 'update') || str_contains($descLower, 'edit')) {
+            $actionLabel = 'Update';
+            $actionBg = '#DBEAFE';
+            $actionColor = '#2563EB';
+        } elseif (str_contains($descLower, 'delete') || str_contains($descLower, 'remove')) {
+            $actionLabel = 'Delete';
+            $actionBg = '#FEE2E2';
+            $actionColor = '#DC2626';
+        } elseif (str_contains($descLower, 'login') || str_contains($descLower, 'logged')) {
+            $actionLabel = 'Login';
+            $actionBg = '#F3E8FF';
+            $actionColor = '#9333EA';
+        }
+
+        return [
+            'id' => $log->id,
+            'timestamp' => [
+                'date' => $log->created_at->format('M d, Y'),
+                'time' => $log->created_at->format('h:i A')
+            ],
+            'user' => [
+                'name' => $userName,
+                'initials' => $initials,
+                'bg' => '#F1F5F9', // Default, could be dynamic
+                'color' => '#475569'
+            ],
+            'actionType' => [
+                'label' => $actionLabel,
+                'bg' => $actionBg,
+                'color' => $actionColor
+            ],
+            'description' => [
+                'title' => ucfirst($log->description),
+                'subtitle' => $log->subject_type ? class_basename($log->subject_type) . ' #' . $log->subject_id : 'System Event'
+            ],
+            'entity' => [
+                'primary' => $log->subject_type ? class_basename($log->subject_type) : 'System',
+                'secondary' => $log->subject_id ? 'ID: ' . $log->subject_id : null
+            ],
+            'status' => [
+                'label' => (str_contains(strtolower($log->description), 'fail') || str_contains(strtolower($log->description), 'error')) ? 'Failed' : 'Success',
+                'color' => (str_contains(strtolower($log->description), 'fail') || str_contains(strtolower($log->description), 'error')) ? '#DC2626' : '#16A34A'
+            ]
+        ];
     }
 }

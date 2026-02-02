@@ -40,18 +40,35 @@ class AdminInvestorController extends Controller
 
         // 3. Summary Cards
         $totalInvestors = User::where('role_type', 'investor')->count();
+        $lastMonthTotal = User::where('role_type', 'investor')->where('created_at', '<', Carbon::now()->startOfMonth())->count();
+        $investorGrowth = 0;
+        if ($lastMonthTotal > 0) {
+            $investorGrowth = (($totalInvestors - $lastMonthTotal) / $lastMonthTotal) * 100;
+        }
+        $investorSubtext = $investorGrowth >= 0 ? '+' . round($investorGrowth, 1) . '% from last month' : round($investorGrowth, 1) . '% from last month';
+
         // Active investments count (sum of property and fund investments count)
         $activeInvestments = Investment::where('status', 'active')->count() + FundInvestment::where('status', 'active')->count();
+        // Count distinct properties involved in active investments
+        $activeProperties = Investment::where('status', 'active')->distinct('property_id')->count('property_id');
+        $investmentSubtext = "Across {$activeProperties} properties";
+
         $pendingKyc = KycVerification::where('status', 'pending')->count();
+        $kycSubtext = $pendingKyc > 0 ? 'Requires attention' : 'All caught up';
+        $kycColor = $pendingKyc > 0 ? '#DC2626' : '#16A34A';
         
         // Total Capital Raised (sum of all investments)
         $totalCapital = Investment::sum('amount') + FundInvestment::sum('amount');
+        // Capital raised this month
+        $capitalThisMonth = Investment::where('created_at', '>=', Carbon::now()->startOfMonth())->sum('amount') + 
+                            FundInvestment::where('created_at', '>=', Carbon::now()->startOfMonth())->sum('amount');
+        $capitalSubtext = '+$' . number_format($capitalThisMonth / 1000, 1) . 'k this month';
         
         $summaryCards = [
-            ['label' => 'Total Investors', 'value' => (string)$totalInvestors, 'subtext' => '+12% from last month', 'subtextColor' => '#16A34A'],
-            ['label' => 'Active Investments', 'value' => (string)$activeInvestments, 'subtext' => 'Across 45 properties'],
-            ['label' => 'Pending KYC', 'value' => (string)$pendingKyc, 'subtext' => 'Requires attention', 'subtextColor' => '#DC2626'],
-            ['label' => 'Total Capital Raised', 'value' => '$' . number_format($totalCapital / 1000000, 1) . 'M', 'subtext' => '+$450k this month', 'subtextColor' => '#16A34A']
+            ['label' => 'Total Investors', 'value' => (string)$totalInvestors, 'subtext' => $investorSubtext, 'subtextColor' => '#16A34A'],
+            ['label' => 'Active Investments', 'value' => (string)$activeInvestments, 'subtext' => $investmentSubtext],
+            ['label' => 'Pending KYC', 'value' => (string)$pendingKyc, 'subtext' => $kycSubtext, 'subtextColor' => $kycColor],
+            ['label' => 'Total Capital Raised', 'value' => '$' . number_format($totalCapital / 1000000, 1) . 'M', 'subtext' => $capitalSubtext, 'subtextColor' => '#16A34A']
         ];
 
         // 4. Tabs
@@ -139,10 +156,9 @@ class AdminInvestorController extends Controller
 
         $tableRows = collect($users->items())->map(function ($user) {
             // Determine Status
-            // Mocking user status for now, or assume active if not deleted
-            $status = 'Active'; 
-            $statusBg = '#DCFCE7';
-            $statusColor = '#166534';
+            $status = $user->email_verified_at ? 'Active' : 'Pending';
+            $statusBg = $status === 'Active' ? '#DCFCE7' : '#FEF3C7';
+            $statusColor = $status === 'Active' ? '#166534' : '#B45309';
             
             // Determine KYC Status
             $kycStatus = $user->latestKycVerification ? ucfirst($user->latestKycVerification->status) : 'Unverified';
@@ -159,6 +175,9 @@ class AdminInvestorController extends Controller
             // Total Invested
             $totalInvested = $user->investments->sum('amount') + $user->fundInvestments->sum('amount');
             
+            // Investor Type
+            $type = $user->investorProfile && $user->investorProfile->is_accredited ? 'Accredited' : 'Individual';
+
             return [
                 'id' => $user->id,
                 'name' => $user->name,
@@ -172,16 +191,16 @@ class AdminInvestorController extends Controller
                 'funding' => $fundingStatus,
                 'fundingBg' => $fundingBg,
                 'fundingColor' => $fundingColor,
-                'method' => 'ACH', // Mock
+                'method' => $user->investorProfile->source_of_funds ?? 'N/A',
                 'total' => '$' . number_format($totalInvested),
                 'registration' => $user->created_at->format('M d, Y'),
                 'lastActivity' => $user->last_login_at ? $user->last_login_at->diffForHumans() : 'Never',
                 // Additional data for selection
-                'type' => 'Individual', // Mock
+                'type' => $type,
                 'sidebarTabs' => ['Overview', 'Documents', 'Activity', 'Notes'],
                 'fundingRequest' => [
                     'title' => 'Initial Deposit',
-                    'amount' => '$50,000.00',
+                    'amount' => '$50,000.00', // Still mock as no deposit request model yet
                     'method' => 'Wire Transfer',
                     'bank' => 'Chase Bank (...8832)',
                     'date' => 'Oct 24, 2024'
@@ -191,7 +210,7 @@ class AdminInvestorController extends Controller
                     'statusBg' => $kycBg,
                     'statusColor' => $kycColor,
                     'submitted' => $user->latestKycVerification ? $user->latestKycVerification->created_at->format('M d, Y') : 'N/A',
-                    'approvedBy' => 'Admin User', // Mock
+                    'approvedBy' => $user->latestKycVerification && $user->latestKycVerification->reviewer ? $user->latestKycVerification->reviewer->name : 'System',
                 ],
                 'investmentSummary' => [
                     'totalInvested' => '$' . number_format($totalInvested),
@@ -208,11 +227,9 @@ class AdminInvestorController extends Controller
                         'line2' => ($user->investorProfile?->city ?? '') . ', ' . ($user->investorProfile?->state ?? '') . ' ' . ($user->investorProfile?->zip_code ?? ''),
                     ],
                 ],
-                'recentActivity' => [
-                    ['date' => 'Oct 24', 'action' => 'Logged in'],
-                    ['date' => 'Oct 23', 'action' => 'Viewed 123 Main St'],
-                    ['date' => 'Oct 20', 'action' => 'Downloaded Q3 Report'],
-                ],
+                'recentActivity' => $user->last_login_at ? [
+                    ['date' => $user->last_login_at->format('M d'), 'action' => 'Logged in'],
+                ] : [],
             ];
         });
 
@@ -429,12 +446,79 @@ class AdminInvestorController extends Controller
     public function show($id): JsonResponse
     {
         $user = User::where('role_type', 'investor')
-            ->with(['investorProfile', 'investments', 'fundInvestments', 'latestKycVerification'])
+            ->with(['investorProfile', 'investments', 'fundInvestments', 'latestKycVerification', 'bankAccounts'])
             ->findOrFail($id);
 
         return response()->json([
             'success' => true,
             'data' => $user
+        ]);
+    }
+
+    /**
+     * Verify Investor Bank Account
+     */
+    public function verifyBankAccount(Request $request, $investorId, $accountId): JsonResponse
+    {
+        $user = User::where('role_type', 'investor')->findOrFail($investorId);
+        $account = $user->bankAccounts()->findOrFail($accountId);
+
+        $account->update(['status' => 'verified']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Bank account verified successfully',
+            'data' => $account
+        ]);
+    }
+
+    /**
+     * Update Investor Bank Account
+     */
+    public function updateBankAccount(Request $request, $investorId, $accountId): JsonResponse
+    {
+        $user = User::where('role_type', 'investor')->findOrFail($investorId);
+        $account = $user->bankAccounts()->findOrFail($accountId);
+
+        $request->validate([
+            'bank_name' => 'required|string|max:255',
+            'account_type' => 'required|string|in:checking,savings',
+            'account_number' => 'nullable|string|min:4', // Optional if not changing
+            'routing_number' => 'nullable|string',
+        ]);
+
+        $data = [
+            'bank_name' => $request->bank_name,
+            'account_type' => $request->account_type,
+            'routing_number' => $request->routing_number,
+        ];
+
+        if ($request->filled('account_number')) {
+            $data['account_number_last_4'] = substr($request->account_number, -4);
+        }
+
+        $account->update($data);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Bank account updated successfully',
+            'data' => $account
+        ]);
+    }
+
+    /**
+     * Delete Investor Bank Account
+     */
+    public function deleteBankAccount(Request $request, $investorId, $accountId): JsonResponse
+    {
+        $user = User::where('role_type', 'investor')->findOrFail($investorId);
+        $account = $user->bankAccounts()->findOrFail($accountId);
+
+        $account->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Bank account removed successfully'
         ]);
     }
 

@@ -13,6 +13,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import InvestorNav from '../../components/investor/InvestorNav';
+import InvestModal from '../../components/investor/InvestModal';
 import { useNavigate } from 'react-router-dom';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
 import api from '../../services/api';
@@ -42,6 +43,13 @@ interface Property {
   resolution?: string;
   buttons: Array<{ text: string; type: string }>;
   primary_image?: string;
+  // New fields
+  bidPrice?: string;
+  accruedInterest?: string;
+  expenses?: string;
+  dailyAccrual?: string;
+  price_per_share: number;
+  available_shares: number;
 }
 
 interface PaginationData {
@@ -75,6 +83,16 @@ export default function InvestorsMarketplace() {
   const [minInvest, setMinInvest] = useState('');
   const [minInterest, setMinInterest] = useState('');
   const [locationSearch, setLocationSearch] = useState('');
+
+  // Modal States
+  const [investModalOpen, setInvestModalOpen] = useState(false);
+  const [selectedPropertyForInvest, setSelectedPropertyForInvest] = useState<Property | null>(null);
+
+  const handleInvestClick = (property: Property) => {
+      setSelectedPropertyForInvest(property);
+      setInvestModalOpen(true);
+  };
+
 
   // Static content for UI structure
   const staticContent = {
@@ -114,9 +132,9 @@ export default function InvestorsMarketplace() {
   const parsePercentage = (val: string | undefined) => parseFloat(val?.replace(/[^0-9.]/g, '') || '0');
 
   // Fetch properties from API
-  const fetchProperties = async () => {
+  const fetchProperties = async (background = false) => {
     try {
-      setLoading(true);
+      if (!background) setLoading(true);
       setError(null);
 
       const params: any = {
@@ -191,12 +209,18 @@ export default function InvestorsMarketplace() {
       deadline: apiProp.redemption_deadline ? `${calculateDaysRemaining(apiProp.redemption_deadline)} days` : 'N/A',
       deadlineColor: '#F59E0B', // Default warning color
       interestRate: `${apiProp.roi}%`,
-      payoffToday: formatCurrency(apiProp.current_value),
-      minInvest: formatCurrency(apiProp.price_per_share),
+      payoffToday: formatCurrency(apiProp.current_value || 0),
+      minInvest: formatCurrency(apiProp.price_per_share || 0),
       status: apiProp.status,
-      estValue: formatCurrency(apiProp.current_value),
-      buttons: [{ text: 'View Details', type: 'primary' }],
-      primary_image: apiProp.primary_image
+      estValue: formatCurrency(apiProp.est_value || 0),
+      buttons: [{ text: 'View Details', type: 'secondary' }, { text: 'Invest', type: 'primary' }],
+      primary_image: apiProp.primary_image,
+      price_per_share: apiProp.price_per_share || 0,
+      available_shares: apiProp.available_shares || 0,
+      bidPrice: formatCurrency(apiProp.purchase_price || 0),
+      accruedInterest: formatCurrency(apiProp.accrued_interest || 0),
+      expenses: formatCurrency(0),
+      dailyAccrual: `${formatCurrency(apiProp.daily_accrual || 0)} per day`,
     };
   };
 
@@ -212,7 +236,8 @@ export default function InvestorsMarketplace() {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency: 'USD',
-      maximumFractionDigits: 0
+      maximumFractionDigits: 2,
+      minimumFractionDigits: 2
     }).format(value);
   };
 
@@ -759,6 +784,22 @@ export default function InvestorsMarketplace() {
                         minWidth: 0
                       }}
                     >
+                      {/* Property Image */}
+                      {property.primary_image && (
+                        <div style={{
+                          height: '180px',
+                          width: '100%',
+                          backgroundColor: '#f1f5f9',
+                          borderBottom: '1px solid #e2e8f0'
+                        }}>
+                          <img
+                            src={property.primary_image}
+                            alt={property.address}
+                            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          />
+                        </div>
+                      )}
+
                       {/* Property Header */}
                       <div style={{
                         padding: `clamp(14px, 1.8vw, 20px)`,
@@ -795,102 +836,76 @@ export default function InvestorsMarketplace() {
 
                       {/* Property Details */}
                       <div style={{ padding: `clamp(14px, 1.8vw, 20px)`, flex: 1, display: 'flex', flexDirection: 'column', gap: `clamp(10px, 1.3vh, 12px)` }}>
-                        {/* Dynamic content based on property status */}
-                        {property.status === 'active' && (
-                          <>
-                            {property.deadline && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>DEADLINE</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: property.deadlineColor, display: 'flex', alignItems: 'center', gap: `clamp(4px, 0.6vw, 6px)`, flexShrink: 0 }}>
-                                  <div style={{ width: `clamp(5px, 0.6vw, 6px)`, height: `clamp(5px, 0.6vw, 6px)`, borderRadius: '50%', backgroundColor: property.deadlineColor, flexShrink: 0 }}></div>
-                                  {property.deadline}
-                                </span>
-                              </div>
-                            )}
-                            {property.interestRate && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>INTEREST RATE</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.interestRate}</span>
-                              </div>
-                            )}
-                            {property.payoffToday && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>PAYOFF TODAY</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right', wordBreak: 'break-word' }}>{property.payoffToday}</span>
-                              </div>
-                            )}
-                            {property.minInvest && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>MIN. INVEST</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.minInvest}</span>
-                              </div>
-                            )}
-                            {property.processStage && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>PROCESS STAGE</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.processStage}</span>
-                              </div>
-                            )}
-                            {property.legalCost && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>LEGAL COST</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.legalCost}</span>
-                              </div>
-                            )}
-                            {property.estValue && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>EST. VALUE</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right', wordBreak: 'break-word' }}>{property.estValue}</span>
-                              </div>
-                            )}
-                            {property.statusLabel && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>STATUS</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.statusLabel}</span>
-                              </div>
-                            )}
-                            {property.holdValue && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>HOLD VALUE</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right', wordBreak: 'break-word' }}>{property.holdValue}</span>
-                              </div>
-                            )}
-                            {property.resolution && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>RESOLUTION</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.resolution}</span>
-                              </div>
-                            )}
-                          </>
+                        {/* Render any available data fields regardless of status */}
+                        {property.deadline && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                            <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>DEADLINE</span>
+                            <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: property.deadlineColor, display: 'flex', alignItems: 'center', gap: `clamp(4px, 0.6vw, 6px)`, flexShrink: 0 }}>
+                              <div style={{ width: `clamp(5px, 0.6vw, 6px)`, height: `clamp(5px, 0.6vw, 6px)`, borderRadius: '50%', backgroundColor: property.deadlineColor, flexShrink: 0 }}></div>
+                              {property.deadline}
+                            </span>
+                          </div>
+                        )}
+                        {property.bidPrice && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                            <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>BID PRICE</span>
+                            <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.bidPrice}</span>
+                          </div>
+                        )}
+                        {property.accruedInterest && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                            <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>ACCRUED INTEREST</span>
+                            <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.accruedInterest}</span>
+                          </div>
+                        )}
+                        {property.expenses && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                            <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>EXPENSES</span>
+                            <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.expenses}</span>
+                          </div>
+                        )}
+                        {property.payoffToday && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                            <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>EST. PAYOFF TODAY</span>
+                            <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right', wordBreak: 'break-word' }}>{property.payoffToday}</span>
+                          </div>
+                        )}
+                        {property.dailyAccrual && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                            <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>DAILY ACCRUAL</span>
+                            <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.dailyAccrual}</span>
+                          </div>
+                        )}
+                        {property.minInvest && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                            <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>MIN. INVEST</span>
+                            <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.minInvest}</span>
+                          </div>
                         )}
 
-                        {property.status === 'redeemed' && (
-                          <>
-                            {property.redeemedOn && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>REDEEMED ON</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.redeemedOn}</span>
-                              </div>
-                            )}
-                            {property.roi && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>ROI</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#10B981', lineHeight: 1.4, textAlign: 'right' }}>{property.roi}</span>
-                              </div>
-                            )}
-                            {property.finalPayoff && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>FINAL PAYOFF</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right', wordBreak: 'break-word' }}>{property.finalPayoff}</span>
-                              </div>
-                            )}
-                            {property.duration && (
-                              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>DURATION</span>
-                                <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.duration}</span>
-                              </div>
-                            )}
-                          </>
+                        {property.redeemedOn && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                            <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>REDEEMED ON</span>
+                            <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.redeemedOn}</span>
+                          </div>
+                        )}
+                        {property.roi && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                            <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>ROI</span>
+                            <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#10B981', lineHeight: 1.4, textAlign: 'right' }}>{property.roi}</span>
+                          </div>
+                        )}
+                        {property.finalPayoff && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                            <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>FINAL PAYOFF</span>
+                            <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right', wordBreak: 'break-word' }}>{property.finalPayoff}</span>
+                          </div>
+                        )}
+                        {property.duration && (
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                            <span style={{ fontSize: `clamp(10px, 1.2vw, 12px)`, color: '#64748B', fontWeight: 500, lineHeight: 1.4 }}>DURATION</span>
+                            <span style={{ fontSize: `clamp(11px, 1.3vw, 13px)`, fontWeight: 600, color: '#0F172A', lineHeight: 1.4, textAlign: 'right' }}>{property.duration}</span>
+                          </div>
                         )}
                       </div>
 
@@ -910,7 +925,7 @@ export default function InvestorsMarketplace() {
                               if (btn.text === 'Details' || btn.text === 'View Details') {
                                 navigate(`/investor/properties/${property.id}`);
                               } else if (btn.text === 'Invest') {
-                                navigate(`/investor/properties/${property.id}`);
+                                handleInvestClick(property);
                               }
                             }}
                             style={{
@@ -1010,34 +1025,28 @@ export default function InvestorsMarketplace() {
                           </td>
                           <td style={{ padding: `clamp(12px, 1.5vw, 16px)`, fontSize: `clamp(13px, 1.4vw, 14px)`, color: '#64748B' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: `clamp(4px, 0.5vh, 6px)` }}>
-                              {property.status === 'active' && (
-                                <>
-                                  {property.deadline && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                      <div style={{ width: `clamp(5px, 0.6vw, 6px)`, height: `clamp(5px, 0.6vw, 6px)`, borderRadius: '50%', backgroundColor: property.deadlineColor || '#10B981', flexShrink: 0 }}></div>
-                                      <span>Deadline: {property.deadline}</span>
-                                    </div>
-                                  )}
-                                  {property.interestRate && <span>Rate: {property.interestRate}</span>}
-                                  {property.minInvest && <span>Min: {property.minInvest}</span>}
-                                </>
-                              )}
-                              {property.status === 'redeemed' && (
-                                <>
-                                  {property.roi && <span>ROI: <span style={{ color: '#10B981', fontWeight: 600 }}>{property.roi}</span></span>}
-                                  {property.duration && <span>Duration: {property.duration}</span>}
-                                  {property.redeemedOn && <span>Redeemed: {property.redeemedOn}</span>}
-                                </>
-                              )}
+                                {property.deadline && (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                                    <div style={{ width: `clamp(5px, 0.6vw, 6px)`, height: `clamp(5px, 0.6vw, 6px)`, borderRadius: '50%', backgroundColor: property.deadlineColor || '#10B981', flexShrink: 0 }}></div>
+                                    <span>Deadline: {property.deadline}</span>
+                                  </div>
+                                )}
+                                {property.interestRate && <span>Rate: {property.interestRate}</span>}
+                                {property.minInvest && <span>Min: {property.minInvest}</span>}
+                                {property.roi && <span>ROI: <span style={{ color: '#10B981', fontWeight: 600 }}>{property.roi}</span></span>}
+                                {property.accruedInterest && <span>Accrued: {property.accruedInterest}</span>}
+                                {property.dailyAccrual && <span>Daily: {property.dailyAccrual}</span>}
+                                {property.duration && <span>Duration: {property.duration}</span>}
+                                {property.redeemedOn && <span>Redeemed: {property.redeemedOn}</span>}
                             </div>
                           </td>
                           <td style={{ padding: `clamp(12px, 1.5vw, 16px)`, textAlign: 'right', fontSize: `clamp(13px, 1.4vw, 14px)`, fontWeight: 600, color: '#0F172A' }}>
-                            {property.status === 'active' && property.payoffToday && (
-                              <div>{property.payoffToday}</div>
-                            )}
-                            {property.status === 'redeemed' && property.finalPayoff && (
-                              <div style={{ color: '#10B981' }}>{property.finalPayoff}</div>
-                            )}
+                              {property.payoffToday && (
+                                <div>{property.payoffToday}</div>
+                              )}
+                              {property.finalPayoff && (
+                                <div style={{ color: '#10B981' }}>{property.finalPayoff}</div>
+                              )}
                           </td>
                           <td style={{ padding: `clamp(12px, 1.5vw, 16px)`, textAlign: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: `clamp(6px, 0.8vw, 8px)`, flexWrap: 'wrap' }}>
@@ -1049,8 +1058,7 @@ export default function InvestorsMarketplace() {
                                     if (btn.text === 'Details' || btn.text === 'View Details') {
                                       navigate(`/investor/properties/${property.id}`);
                                     } else if (btn.text === 'Invest') {
-                                      // For now also go to details, or handle invest logic
-                                      navigate(`/investor/properties/${property.id}`);
+                                      handleInvestClick(property);
                                     }
                                   }}
                                   style={{
@@ -1127,27 +1135,23 @@ export default function InvestorsMarketplace() {
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: `clamp(8px, 1vh, 10px)`, fontSize: `clamp(12px, 1.3vw, 13px)`, color: '#64748B' }}>
-                          {property.status === 'active' && (
-                            <>
-                              {property.deadline && (
-                                <div style={{ display: 'flex', alignItems: 'center', gap: `clamp(4px, 0.6vw, 6px)` }}>
-                                  <div style={{ width: `clamp(5px, 0.6vw, 6px)`, height: `clamp(5px, 0.6vw, 6px)`, borderRadius: '50%', backgroundColor: property.deadlineColor || '#10B981', flexShrink: 0 }}></div>
-                                  <span>Deadline: {property.deadline}</span>
-                                </div>
-                              )}
-                              {property.interestRate && <div>Interest Rate: {property.interestRate}</div>}
-                              {property.payoffToday && <div style={{ fontWeight: 600, color: '#0F172A' }}>Payoff Today: {property.payoffToday}</div>}
-                              {property.minInvest && <div>Min. Invest: {property.minInvest}</div>}
-                            </>
+                          {/* Render available fields regardless of status */}
+                          {property.deadline && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: `clamp(4px, 0.6vw, 6px)` }}>
+                              <div style={{ width: `clamp(5px, 0.6vw, 6px)`, height: `clamp(5px, 0.6vw, 6px)`, borderRadius: '50%', backgroundColor: property.deadlineColor || '#10B981', flexShrink: 0 }}></div>
+                              <span>Deadline: {property.deadline}</span>
+                            </div>
                           )}
-                          {property.status === 'redeemed' && (
-                            <>
-                              {property.roi && <div>ROI: <span style={{ color: '#10B981', fontWeight: 600 }}>{property.roi}</span></div>}
-                              {property.finalPayoff && <div style={{ fontWeight: 600, color: '#10B981' }}>Final Payoff: {property.finalPayoff}</div>}
-                              {property.duration && <div>Duration: {property.duration}</div>}
-                              {property.redeemedOn && <div>Redeemed On: {property.redeemedOn}</div>}
-                            </>
-                          )}
+                          {property.interestRate && <div>Interest Rate: {property.interestRate}</div>}
+                          {property.payoffToday && <div style={{ fontWeight: 600, color: '#0F172A' }}>Payoff Today: {property.payoffToday}</div>}
+                          {property.minInvest && <div>Min. Invest: {property.minInvest}</div>}
+                          {property.dailyAccrual && <div>Daily Accrual: {property.dailyAccrual}</div>}
+                          {property.accruedInterest && <div>Accrued Interest: {property.accruedInterest}</div>}
+                          
+                          {property.roi && <div>ROI: <span style={{ color: '#10B981', fontWeight: 600 }}>{property.roi}</span></div>}
+                          {property.finalPayoff && <div style={{ fontWeight: 600, color: '#10B981' }}>Final Payoff: {property.finalPayoff}</div>}
+                          {property.duration && <div>Duration: {property.duration}</div>}
+                          {property.redeemedOn && <div>Redeemed On: {property.redeemedOn}</div>}
                         </div>
 
                         <div style={{ display: 'flex', gap: `clamp(8px, 1vw, 10px)`, paddingTop: `clamp(8px, 1vh, 12px)`, borderTop: '1px solid #E2E8F0', flexWrap: 'wrap' }}>
@@ -1159,7 +1163,7 @@ export default function InvestorsMarketplace() {
                                 if (btn.text === 'Details' || btn.text === 'View Details') {
                                   navigate(`/investor/properties/${property.id}`);
                                 } else if (btn.text === 'Invest') {
-                                  navigate(`/investor/properties/${property.id}`);
+                                  handleInvestClick(property);
                                 }
                               }}
                               style={{
@@ -1328,6 +1332,22 @@ export default function InvestorsMarketplace() {
           `}
         </style>
       </div>
+      {/* Invest Modal */}
+      {selectedPropertyForInvest && (
+        <InvestModal
+          isOpen={investModalOpen}
+          onClose={() => setInvestModalOpen(false)}
+          property={{
+            id: selectedPropertyForInvest.id,
+            address: selectedPropertyForInvest.address,
+            price_per_share: selectedPropertyForInvest.price_per_share,
+            available_shares: selectedPropertyForInvest.available_shares
+          }}
+          onSuccess={() => {
+                    fetchProperties(true); // Refresh data in background
+                }}
+        />
+      )}
     </>
   );
 }

@@ -30,6 +30,7 @@ const iconMap: { [key: string]: any } = {
 interface ShareListing {
     id: string;
     rawId?: number;
+    propertyId?: number;
     propertyAddress: string;
     location: string;
     badge: string;
@@ -172,6 +173,7 @@ export default function ShareMarketplace() {
                     return {
                         id: (typeof item.id === 'string' && item.id.startsWith('INV-')) ? item.id : `SHARE-${item.id}`,
                         rawId: item.rawId || item.id,
+                        propertyId: item.property?.id,
                         propertyAddress: item.property?.address || 'Unknown Property',
                         location: `${item.property?.city || ''}, ${item.property?.state || ''} ${item.property?.zip || ''}`,
                         badge: badgeLabel,
@@ -838,7 +840,9 @@ export default function ShareMarketplace() {
                                         Pending Sale
                                     </button>
                                 ) : (
-                                    <button style={{ width: '100%', padding: '10px', backgroundColor: '#fff', border: '1px solid #E2E8F0', color: '#64748B', fontSize: 13, fontWeight: 600, borderRadius: 6, cursor: 'pointer' }}>
+                                    <button 
+                                        onClick={() => item.propertyId && navigate(`/investor/properties/${item.propertyId}`)}
+                                        style={{ width: '100%', padding: '10px', backgroundColor: '#fff', border: '1px solid #E2E8F0', color: '#64748B', fontSize: 13, fontWeight: 600, borderRadius: 6, cursor: 'pointer' }}>
                                         View Details
                                     </button>
                                 )}

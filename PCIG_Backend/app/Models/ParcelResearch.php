@@ -33,6 +33,11 @@ class ParcelResearch extends Model
         return $this->belongsTo(User::class, 'researched_by');
     }
 
+    public function property()
+    {
+        return $this->belongsTo(Property::class, 'parcel_id', 'parcel_id');
+    }
+
     public function documents()
     {
         return $this->hasMany(ParcelDocument::class);

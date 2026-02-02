@@ -14,6 +14,7 @@ class FIFAImport extends Model
     protected $fillable = [
         'file_path',
         'file_name',
+        'description',
         'status',
         'total_rows',
         'processed_rows',

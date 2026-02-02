@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, Building, MapPin, DollarSign, FileText, Upload, AlertCircle, Loader2 } from 'lucide-react';
+import { ArrowLeft, Save, Building, MapPin, DollarSign, FileText, Upload, AlertCircle, Loader2, X, File, Share2 } from 'lucide-react';
 import AdminNav from '../../components/admin/AdminNav';
 import api from '../../services/api';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
@@ -17,6 +17,8 @@ export default function AddProperty() {
 
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Form State
     const [formData, setFormData] = useState({
@@ -28,12 +30,20 @@ export default function AddProperty() {
         county: '',
         parcelId: '',
         type: 'Single Family',
+        legalDescription: '',
+        zoning: '',
+        lotSize: '',
+        yearBuilt: '',
 
         // Financials
         estimatedArv: '',
         taxValue: '',
         bidAmount: '',
         interestRate: '12%',
+
+        // Tokenization
+        totalShares: '',
+        pricePerShare: '',
 
         // Workflow
         status: 'Active',
@@ -64,6 +74,33 @@ export default function AddProperty() {
         }
     };
 
+    const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files) {
+            const filesArray = Array.from(e.target.files);
+            // Filter for images and size limit (10MB)
+            const validFiles = filesArray.filter(file => {
+                const isImage = file.type.startsWith('image/');
+                const isUnderLimit = file.size <= 10 * 1024 * 1024; // 10MB
+                return isImage && isUnderLimit;
+            });
+            
+            if (validFiles.length !== filesArray.length) {
+                // Could set a warning message here about skipped files
+                console.warn('Some files were skipped due to type or size constraints');
+            }
+            
+            setSelectedFiles(prev => [...prev, ...validFiles]);
+        }
+    };
+
+    const removeFile = (index: number) => {
+        setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const triggerFileInput = () => {
+        fileInputRef.current?.click();
+    };
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setIsSubmitting(true);
@@ -72,6 +109,11 @@ export default function AddProperty() {
         try {
             const payload = {
                 parcel_id: formData.parcelId,
+                property_type: formData.type,
+                legal_description: formData.legalDescription,
+                zoning: formData.zoning,
+                lot_size: formData.lotSize,
+                year_built: formData.yearBuilt,
                 address: formData.address,
                 city: formData.city,
                 state: formData.state,
@@ -80,19 +122,47 @@ export default function AddProperty() {
                 status: formData.status.toLowerCase(),
                 workflow_stage: getBackendStage(formData.stage),
                 current_value: formData.estimatedArv ? parseFloat(formData.estimatedArv.replace(/[^0-9.]/g, '')) : 0,
+                assessed_value: formData.taxValue ? parseFloat(formData.taxValue.replace(/[^0-9.]/g, '')) : 0,
                 purchase_price: formData.bidAmount ? parseFloat(formData.bidAmount.replace(/[^0-9.]/g, '')) : 0,
                 roi: formData.interestRate ? parseFloat(formData.interestRate.replace(/[^0-9.]/g, '')) : 0,
                 purchase_date: formData.auctionDate || null,
                 redemption_deadline: formData.redemptionDeadline || null,
                 description: formData.notes,
-                // Additional fields to match strict requirements if any
-                total_shares: 0,
-                available_shares: 0
+                // Tokenization fields
+                total_shares: formData.totalShares ? parseInt(formData.totalShares.replace(/[^0-9]/g, '')) : 0,
+                price_per_share: formData.pricePerShare ? parseFloat(formData.pricePerShare.replace(/[^0-9.]/g, '')) : 0,
             };
 
+            // Calculate available shares if not provided (default to total)
+            // Backend handles this too, but we can be explicit if needed.
+            // For now, let backend handle the default logic: available = total if available is null.
+            
             const response = await api.post('/admin/properties', payload);
 
             if (response.data.success) {
+                const propertyId = response.data.data.id;
+                
+                // Upload images if any
+                if (selectedFiles.length > 0) {
+                    try {
+                        const uploadPromises = selectedFiles.map((file, index) => {
+                            const formData = new FormData();
+                            formData.append('property_id', propertyId);
+                            formData.append('image', file);
+                            formData.append('is_primary', index === 0 ? '1' : '0'); // First image is primary
+                            formData.append('order', index.toString());
+                            
+                            return api.post('/admin/properties/upload-image', formData);
+                        });
+                        
+                        await Promise.all(uploadPromises);
+                    } catch (uploadError) {
+                        console.error('Error uploading images:', uploadError);
+                        // We don't stop navigation if images fail, but we could warn the user
+                        // Ideally show a toast notification here
+                    }
+                }
+
                 navigate('/admin/properties');
             } else {
                 setError(response.data.message || 'Failed to create property');
@@ -232,6 +302,50 @@ export default function AddProperty() {
                                     </select>
                                 </div>
                             </div>
+                            
+                            <div>
+                                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Legal Description</label>
+                                <textarea
+                                    value={formData.legalDescription}
+                                    onChange={(e) => handleChange('legalDescription', e.target.value)}
+                                    placeholder="Legal Description"
+                                    rows={3}
+                                    style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit' }}
+                                />
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 20 }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Zoning</label>
+                                    <input
+                                        type="text"
+                                        value={formData.zoning}
+                                        onChange={(e) => handleChange('zoning', e.target.value)}
+                                        placeholder="e.g. R1"
+                                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Lot Size</label>
+                                    <input
+                                        type="text"
+                                        value={formData.lotSize}
+                                        onChange={(e) => handleChange('lotSize', e.target.value)}
+                                        placeholder="e.g. 0.25 acres"
+                                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Year Built</label>
+                                    <input
+                                        type="text"
+                                        value={formData.yearBuilt}
+                                        onChange={(e) => handleChange('yearBuilt', e.target.value)}
+                                        placeholder="e.g. 1985"
+                                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -279,6 +393,40 @@ export default function AddProperty() {
                                     value={formData.interestRate}
                                     onChange={(e) => handleChange('interestRate', e.target.value)}
                                     placeholder="%"
+                                    style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                                />
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Section 2.5: Tokenization / Investment */}
+                    <div style={{ backgroundColor: '#FFFFFF', borderRadius: 12, border: '1px solid #E2E8F0', padding: isMobile ? 16 : 24 }}>
+                        <h2 style={{ fontSize: 16, fontWeight: 600, color: '#0F172A', marginTop: 0, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 4, height: 16, backgroundColor: '#1E3A5F', borderRadius: 2 }}></div>
+                            <Share2 size={18} color="#64748B" /> Tokenization & Investment
+                        </h2>
+                        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 20 }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Total Shares</label>
+                                <input
+                                    type="number"
+                                    value={formData.totalShares}
+                                    onChange={(e) => handleChange('totalShares', e.target.value)}
+                                    placeholder="e.g. 1000"
+                                    min="0"
+                                    style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
+                                />
+                                <p style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>
+                                    Set &gt; 0 to make visible to investors.
+                                </p>
+                            </div>
+                            <div>
+                                <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Price Per Share</label>
+                                <input
+                                    type="text"
+                                    value={formData.pricePerShare}
+                                    onChange={(e) => handleChange('pricePerShare', e.target.value)}
+                                    placeholder="$0.00"
                                     style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
                                 />
                             </div>
@@ -346,11 +494,22 @@ export default function AddProperty() {
                         <div style={{ display: 'grid', gap: 20 }}>
                             <div>
                                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#334155', marginBottom: 12 }}>Property Photos</label>
-                                <div style={{
-                                    border: '2px dashed #E2E8F0', borderRadius: 8, padding: 32,
-                                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
-                                    cursor: 'pointer', backgroundColor: '#F8FAFC', transition: 'all 0.2s'
-                                }}>
+                                <input 
+                                    type="file" 
+                                    ref={fileInputRef}
+                                    onChange={handleFileSelect}
+                                    style={{ display: 'none' }} 
+                                    multiple 
+                                    accept="image/png, image/jpeg, image/jpg"
+                                />
+                                <div 
+                                    onClick={triggerFileInput}
+                                    style={{
+                                        border: '2px dashed #E2E8F0', borderRadius: 8, padding: 32,
+                                        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 12,
+                                        cursor: 'pointer', backgroundColor: '#F8FAFC', transition: 'all 0.2s'
+                                    }}
+                                >
                                     <Upload color="#94A3B8" size={32} />
                                     <div style={{ textAlign: 'center' }}>
                                         <span style={{ fontSize: 14, fontWeight: 600, color: '#1E3A5F' }}>Click to upload</span>
@@ -358,6 +517,35 @@ export default function AddProperty() {
                                     </div>
                                     <span style={{ fontSize: 12, color: '#94A3B8' }}>JPG, PNG up to 10MB</span>
                                 </div>
+                                
+                                {selectedFiles.length > 0 && (
+                                    <div style={{ marginTop: 16, display: 'grid', gap: 8 }}>
+                                        {selectedFiles.map((file, index) => (
+                                            <div key={index} style={{ 
+                                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                                padding: '8px 12px', backgroundColor: '#F1F5F9', borderRadius: 6,
+                                                fontSize: 13, color: '#334155'
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                    <File size={14} color="#64748B" />
+                                                    <span style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        {file.name}
+                                                    </span>
+                                                    <span style={{ color: '#94A3B8', fontSize: 12 }}>
+                                                        ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                                                    </span>
+                                                </div>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => removeFile(index)}
+                                                    style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 4, color: '#EF4444' }}
+                                                >
+                                                    <X size={14} />
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                             <div>
                                 <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Internal Notes</label>

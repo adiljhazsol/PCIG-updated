@@ -14,14 +14,15 @@ class CreateTransactionRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'user_id' => 'required|exists:users,id',
+            'user_id' => 'nullable|exists:users,id',
             'type' => 'required|in:investment,distribution,sale,purchase,deposit,withdrawal,refund',
-            'amount' => 'required|numeric|min:0.01',
+            'amount' => 'required|numeric',
             'description' => 'nullable|string|max:500',
             'property_id' => 'nullable|exists:properties,id',
             'fund_id' => 'nullable|exists:funds,id',
             'investment_id' => 'nullable|exists:investments,id',
             'status' => 'nullable|in:pending,completed,failed,cancelled',
+            'metadata' => 'nullable|array',
         ];
     }
 }

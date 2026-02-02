@@ -12,11 +12,21 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('parcel_research', function (Blueprint $table) {
-            $table->string('owner_name')->nullable();
-            $table->string('owner_phone')->nullable();
-            $table->string('owner_email')->nullable();
-            $table->string('mailing_address')->nullable();
-            $table->string('status')->default('New'); // Adding status here too as it was missing
+            if (!Schema::hasColumn('parcel_research', 'owner_name')) {
+                $table->string('owner_name')->nullable();
+            }
+            if (!Schema::hasColumn('parcel_research', 'owner_phone')) {
+                $table->string('owner_phone')->nullable();
+            }
+            if (!Schema::hasColumn('parcel_research', 'owner_email')) {
+                $table->string('owner_email')->nullable();
+            }
+            if (!Schema::hasColumn('parcel_research', 'mailing_address')) {
+                $table->string('mailing_address')->nullable();
+            }
+            if (!Schema::hasColumn('parcel_research', 'status')) {
+                $table->string('status')->default('New'); // Adding status here too as it was missing
+            }
         });
     }
 

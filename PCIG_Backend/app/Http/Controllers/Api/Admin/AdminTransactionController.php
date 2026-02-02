@@ -351,8 +351,9 @@ class AdminTransactionController extends Controller
         $referenceNumber = 'TXN-' . str_pad(Transaction::max('id') + 1, 8, '0', STR_PAD_LEFT);
 
         $transaction = Transaction::create([
-            'user_id' => $request->user_id,
+            'user_id' => $request->user_id, // Can be null
             'type' => $request->type,
+            'date' => Carbon::now(),
             'amount' => $request->amount,
             'property_id' => $request->property_id,
             'fund_id' => $request->fund_id,
@@ -360,6 +361,7 @@ class AdminTransactionController extends Controller
             'description' => $request->description,
             'status' => $request->status ?? 'pending',
             'reference_number' => $referenceNumber,
+            'metadata' => $request->metadata,
         ]);
 
         return response()->json([

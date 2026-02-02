@@ -87,4 +87,42 @@ class InvestorTransactionController extends Controller
             ],
         ]);
     }
+
+    public function deposit(Request $request): JsonResponse
+    {
+        $request->validate([
+            'amount' => 'required|numeric|min:10',
+            'method' => 'required|string',
+        ]);
+
+        $user = $request->user();
+        $amount = $request->amount;
+        
+        // Create transaction
+        $transaction = Transaction::create([
+            'reference_number' => 'DEP-' . strtoupper(uniqid()),
+            'user_id' => $user->id,
+            'type' => 'Deposit',
+            'date' => now(),
+            'amount' => $amount,
+            'status' => 'Completed', // Auto-complete for demo
+            'description' => 'Manual Deposit',
+            'property_fund' => 'Wallet Deposit',
+            'method' => $request->method,
+            'type_icon' => 'Wallet',
+            'type_icon_color' => '#6366F1',
+            'type_icon_bg_color' => '#EEF2FF',
+            'amount_color' => '#10B981',
+            'status_bg_color' => '#ECFDF5',
+            'status_color' => '#10B981',
+            'action' => 'View',
+            'action_color' => '#2563EB',
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Deposit successful',
+            'data' => new TransactionResource($transaction),
+        ]);
+    }
 }

@@ -1,4 +1,4 @@
-import React, { CSSProperties, useState, useEffect } from 'react';
+import React, { CSSProperties, useState, useEffect, useRef } from 'react';
 import {
   Search,
   Filter,
@@ -74,11 +74,17 @@ interface SurplusContactHistory {
 interface SurplusOutreach {
   documentName: string;
   status: string;
+  url?: string;
 }
 
-interface SurplusDocuments {
-  message: string;
+interface SurplusDocument {
+    id: number;
+    name: string;
+    url: string;
+    date: string;
 }
+
+type SurplusDocuments = SurplusDocument[] | { message: string };
 
 interface SurplusRecipientInfo {
   name: string;
@@ -90,6 +96,7 @@ interface SurplusRecipientInfo {
 
 interface SurplusRecord {
   id: string;
+  propertyId: number;
   caseNumber: string;
   fcsFile: string;
   county: string;
@@ -144,33 +151,281 @@ export default function SurplusFundsResearch() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedRecordId, setSelectedRecordId] = useState<string>('');
+  
+  // Recipient Edit State
+  const [isEditingRecipient, setIsEditingRecipient] = useState(false);
+  const [recipientForm, setRecipientForm] = useState<SurplusRecipientInfo>({
+    name: '', address: '', city: '', state: '', phone: ''
+  });
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await api.get('/admin/surplus-funds/dashboard-data');
+  // Contact Log State
+  const [isContactModalOpen, setIsContactModalOpen] = useState(false);
+  const [contactForm, setContactForm] = useState({ type: 'call', notes: '', date: new Date().toISOString().split('T')[0] });
+
+  // Add Record State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [newRecordForm, setNewRecordForm] = useState({ property_id: '', amount: '', notes: '' });
+  const [properties, setProperties] = useState<any[]>([]);
+
+  const handleAddRecord = async () => {
+    try {
+        await api.post('/admin/workflow/surplus', newRecordForm);
+        // Refresh data
+        const response = await api.get('/admin/workflow/surplus');
         if (response.data && response.data.surplusFundsResearch) {
-          const surplusData = response.data.surplusFundsResearch;
+            setData(response.data.surplusFundsResearch);
+        }
+        setIsAddModalOpen(false);
+        setNewRecordForm({ property_id: '', amount: '', notes: '' });
+        alert('Record created successfully');
+    } catch (error) {
+        console.error('Error creating record:', error);
+        alert('Failed to create record');
+    }
+  };
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
+
+  const handleExport = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await api.get('/admin/workflow/surplus/export', {
+        responseType: 'blob',
+        headers: token ? { Authorization: `Bearer ${token}` } : {}
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `surplus-funds-${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      console.error('Error exporting data:', error);
+      alert('Failed to export data');
+    }
+  };
+
+  const handleImportClick = () => {
+    if (importInputRef.current) {
+        importInputRef.current.value = '';
+        importInputRef.current.click();
+    }
+  };
+
+  const handleImportFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const token = localStorage.getItem('token');
+        await api.post('/admin/workflow/surplus/import', formData, {
+            headers: {
+                'Content-Type': 'multipart/form-data',
+                 ...(token ? { Authorization: `Bearer ${token}` } : {})
+            }
+        });
+        // Refresh data
+        const response = await api.get('/admin/workflow/surplus');
+        if (response.data && response.data.surplusFundsResearch) {
+            setData(response.data.surplusFundsResearch);
+        }
+        alert('Data imported successfully');
+    } catch (error) {
+        console.error('Error importing data:', error);
+        alert('Failed to import data');
+    }
+  };
+
+  const handleUploadClick = () => {
+    if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+        fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedRecord) return;
+
+    const formData = new FormData();
+    formData.append('document', file);
+    formData.append('type', 'surplus');
+
+    try {
+        await api.post(`/admin/properties/${selectedRecord.propertyId}/documents`, formData);
+        // Refresh data
+        const response = await api.get('/admin/workflow/surplus');
+        if (response.data && response.data.surplusFundsResearch) {
+            setData(response.data.surplusFundsResearch);
+        }
+        alert('Document uploaded successfully');
+    } catch (error) {
+        console.error('Error uploading document:', error);
+        alert('Failed to upload document');
+    }
+  };
+
+  // Filter State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [countyFilter, setCountyFilter] = useState('All');
+  const [amountFilter, setAmountFilter] = useState('All');
+  const [dateRange, setDateRange] = useState<{start: string | null, end: string | null}>({ start: null, end: null });
+  const [showDateInputs, setShowDateInputs] = useState(false);
+  const [showFilters, setShowFilters] = useState(true);
+
+  const fetchData = async () => {
+      try {
+        // Only set loading on initial load to avoid flickering on search
+        if (!data) setLoading(true);
+        
+        const token = localStorage.getItem('token');
+        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+        const params: any = {};
+        if (searchQuery) params.search = searchQuery;
+        if (statusFilter !== 'All') params.status = statusFilter;
+        if (countyFilter !== 'All') params.county = countyFilter;
+        if (amountFilter !== 'All') params.amount = amountFilter;
+        if (dateRange.start) params.date_from = dateRange.start;
+        if (dateRange.end) params.date_to = dateRange.end;
+
+        const [surplusResponse, propertiesResponse] = await Promise.all([
+            api.get('/admin/workflow/surplus', { headers, params }),
+            api.get('/admin/properties/dropdown', { headers })
+        ]);
+
+        if (surplusResponse.data && surplusResponse.data.surplusFundsResearch) {
+          const surplusData = surplusResponse.data.surplusFundsResearch;
           setData(surplusData);
           
-          if (surplusData.selectedRecord) {
-              setSelectedRecordId(surplusData.selectedRecord.id);
-          } else if (surplusData.records && surplusData.records.length > 0) {
-              setSelectedRecordId(surplusData.records[0].id);
+          if (!selectedRecordId) {
+             if (surplusData.selectedRecord) {
+                 setSelectedRecordId(surplusData.selectedRecord.id);
+             } else if (surplusData.records && surplusData.records.length > 0) {
+                 setSelectedRecordId(surplusData.records[0].id);
+             }
           }
         } else {
           setError('Failed to load surplus funds data');
         }
+
+        if (propertiesResponse.data) {
+            setProperties(propertiesResponse.data);
+        }
+
       } catch (err) {
-        console.error('Error fetching surplus funds data:', err);
+        console.error('Error fetching data:', err);
         setError('An error occurred while loading data');
       } finally {
         setLoading(false);
       }
     };
 
-    fetchData();
-  }, []);
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      fetchData();
+    }, 500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery, statusFilter, countyFilter, amountFilter, dateRange]);
+
+  const handleGenerateLetters = async () => {
+    if (!selectedRecordId) {
+        alert('Please select a record first.');
+        return;
+    }
+    
+    try {
+        await api.post('/admin/workflow/surplus/generate-letters', {
+            ids: [selectedRecordId] 
+        });
+        alert('Claim letters generated successfully.');
+    } catch (error) {
+        console.error('Error generating letters:', error);
+        alert('Failed to generate letters.');
+    }
+  };
+
+  const selectedRecord = data?.records?.find((r: SurplusRecord) => r.id === selectedRecordId) || data?.records?.[0] || data?.selectedRecord || null;
+
+  useEffect(() => {
+    if (selectedRecord) {
+        setRecipientForm(selectedRecord.recipientInfo);
+    }
+  }, [selectedRecordId, data]);
+
+  const handleUpdateRecipient = async () => {
+    if (!selectedRecord) return;
+    try {
+        await api.post(`/admin/workflow/surplus/${selectedRecord.id}/recipient`, recipientForm);
+        // Refresh data
+        const response = await api.get('/admin/workflow/surplus');
+        if (response.data && response.data.surplusFundsResearch) {
+            setData(response.data.surplusFundsResearch);
+        }
+        setIsEditingRecipient(false);
+        alert('Recipient info updated successfully');
+    } catch (error) {
+        console.error('Error updating recipient:', error);
+        alert('Failed to update recipient info');
+    }
+  };
+
+  const handleSendLetter = async () => {
+    if (!selectedRecord) return;
+    try {
+        await api.post('/admin/workflow/surplus/generate-letters', {
+            ids: [selectedRecord.id]
+        });
+        // Refresh data
+        const response = await api.get('/admin/workflow/surplus');
+        if (response.data && response.data.surplusFundsResearch) {
+            setData(response.data.surplusFundsResearch);
+        }
+        alert('Letter generated and sent successfully');
+    } catch (error) {
+        console.error('Error sending letter:', error);
+        alert('Failed to send letter');
+    }
+  };
+
+  const handleViewOutreach = () => {
+    if (selectedRecord?.outreach?.url && selectedRecord.outreach.url !== '#') {
+        // Open the URL directly
+        window.open(selectedRecord.outreach.url, '_blank');
+    } else {
+        alert('No document available to view yet. Please send a letter first.');
+    }
+  };
+
+  const handleLogContact = async () => {
+    if (!selectedRecord) return;
+    try {
+        await api.post(`/admin/workflow/surplus/${selectedRecord.id}/contact`, {
+            type: contactForm.type,
+            notes: contactForm.notes,
+            contact_date: contactForm.date
+        });
+        // Refresh data
+        const response = await api.get('/admin/workflow/surplus');
+        if (response.data && response.data.surplusFundsResearch) {
+            setData(response.data.surplusFundsResearch);
+        }
+        setIsContactModalOpen(false);
+        setContactForm({ type: 'call', notes: '', date: new Date().toISOString().split('T')[0] });
+        alert('Contact logged successfully');
+    } catch (error) {
+        console.error('Error logging contact:', error);
+        alert('Failed to log contact');
+    }
+  };
 
   const pageWrapperStyle: CSSProperties = {
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -241,6 +496,7 @@ export default function SurplusFundsResearch() {
   const rawRecords = Array.isArray(surplusData.records) ? surplusData.records : [];
   const records = rawRecords.map((record: any) => ({
     id: record?.id || '',
+    propertyId: record?.propertyId || 0,
     caseNumber: record?.caseNumber || '',
     fcsFile: record?.fcsFile || '',
     county: record?.county || '',
@@ -272,7 +528,7 @@ export default function SurplusFundsResearch() {
   }));
   // Use selectedRecordId to find the current selected record from the records array
   // If not found, fallback to the first record or the one from data
-  const selectedRecord = records.find((r: SurplusRecord) => r.id === selectedRecordId) || records[0] || surplusData.selectedRecord || null;
+  // const selectedRecord = records.find((r: SurplusRecord) => r.id === selectedRecordId) || records[0] || surplusData.selectedRecord || null;
 
   return (
     <div style={pageWrapperStyle}>
@@ -346,6 +602,7 @@ export default function SurplusFundsResearch() {
               }}
             >
               <button
+                onClick={handleImportClick}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -366,6 +623,7 @@ export default function SurplusFundsResearch() {
                 {actionButtons.bulkImport?.label}
               </button>
               <button
+                onClick={handleExport}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -386,6 +644,7 @@ export default function SurplusFundsResearch() {
                 {actionButtons.export?.label}
               </button>
               <button
+                onClick={() => setIsAddModalOpen(true)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -537,6 +796,8 @@ export default function SurplusFundsResearch() {
                 <input
                   type="text"
                   placeholder={searchPlaceholder}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   style={{
                     width: '100%',
                     padding: `clamp(8px, 1vh, 10px) clamp(10px, 1.5vw, 12px) clamp(8px, 1vh, 10px) ${isMobileOrTablet ? 'clamp(36px, 5vw, 40px)' : '36px'}`,
@@ -548,29 +809,43 @@ export default function SurplusFundsResearch() {
                   }}
                 />
               </div>
-              {filters.map((filter: SurplusFilter, idx: number) => (
-                <select
-                  key={idx}
-                  style={{
-                    padding: `clamp(8px, 1vh, 10px) clamp(10px, 1.5vw, 12px)`,
-                    fontSize: `clamp(12px, 1.5vw, 13px)`,
-                    border: '1px solid #E2E8F0',
-                    borderRadius: 8,
-                    backgroundColor: '#FFFFFF',
-                    color: '#0F172A',
-                    cursor: 'pointer',
-                    minWidth: isMobile ? '100%' : '120px',
-                    width: isMobile ? '100%' : 'auto'
-                  }}
-                  defaultValue={`${filter.selected}`}
-                >
-                  <option value={filter.selected}>{filter.label}: {filter.selected}</option>
-                  {filter.options.filter(opt => opt !== filter.selected).map(opt => (
-                    <option key={opt} value={opt}>{opt}</option>
-                  ))}
-                </select>
-              ))}
+              {showFilters && filters.map((filter: SurplusFilter, idx: number) => {
+                let currentValue = 'All';
+                if (filter.label === 'Status') currentValue = statusFilter;
+                else if (filter.label === 'County') currentValue = countyFilter;
+                else if (filter.label === 'Amount') currentValue = amountFilter;
+
+                return (
+                  <select
+                    key={idx}
+                    value={currentValue}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (filter.label === 'Status') setStatusFilter(val);
+                      else if (filter.label === 'County') setCountyFilter(val);
+                      else if (filter.label === 'Amount') setAmountFilter(val);
+                    }}
+                    style={{
+                      padding: `clamp(8px, 1vh, 10px) clamp(10px, 1.5vw, 12px)`,
+                      fontSize: `clamp(12px, 1.5vw, 13px)`,
+                      border: '1px solid #E2E8F0',
+                      borderRadius: 8,
+                      backgroundColor: '#FFFFFF',
+                      color: '#0F172A',
+                      cursor: 'pointer',
+                      minWidth: isMobile ? '100%' : '120px',
+                      width: isMobile ? '100%' : 'auto'
+                    }}
+                  >
+                    <option value="All">{filter.label}: All</option>
+                    {filter.options.filter(opt => opt !== 'All').map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                );
+              })}
               <button
+                onClick={() => setShowDateInputs(!showDateInputs)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -579,8 +854,8 @@ export default function SurplusFundsResearch() {
                   fontSize: `clamp(12px, 1.5vw, 13px)`,
                   border: '1px solid #E2E8F0',
                   borderRadius: 8,
-                  backgroundColor: '#FFFFFF',
-                  color: '#64748B',
+                  backgroundColor: showDateInputs ? '#EFF6FF' : '#FFFFFF',
+                  color: showDateInputs ? '#1E40AF' : '#64748B',
                   cursor: 'pointer',
                   width: isMobile ? '100%' : 'auto'
                 }}
@@ -588,7 +863,23 @@ export default function SurplusFundsResearch() {
                 <Calendar style={{ width: `clamp(12px, 2vw, 14px)`, height: `clamp(12px, 2vw, 14px)` }} />
                 Date Range
               </button>
+              {showDateInputs && (
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                      <input 
+                          type="date" 
+                          style={{ fontSize: '11px', padding: '4px', border: '1px solid #E2E8F0', borderRadius: '4px' }}
+                          onChange={(e) => setDateRange({...dateRange, start: e.target.value})} 
+                      />
+                      <span style={{ fontSize: '11px' }}>-</span>
+                      <input 
+                          type="date" 
+                          style={{ fontSize: '11px', padding: '4px', border: '1px solid #E2E8F0', borderRadius: '4px' }}
+                          onChange={(e) => setDateRange({...dateRange, end: e.target.value})} 
+                      />
+                  </div>
+              )}
               <button
+                onClick={() => setShowFilters(!showFilters)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -597,8 +888,8 @@ export default function SurplusFundsResearch() {
                   fontSize: `clamp(12px, 1.5vw, 13px)`,
                   border: '1px solid #E2E8F0',
                   borderRadius: 8,
-                  backgroundColor: '#FFFFFF',
-                  color: '#64748B',
+                  backgroundColor: showFilters ? '#EFF6FF' : '#FFFFFF',
+                  color: showFilters ? '#1E40AF' : '#64748B',
                   cursor: 'pointer',
                   width: isMobile ? '100%' : 'auto'
                 }}
@@ -611,6 +902,7 @@ export default function SurplusFundsResearch() {
             {/* Generate Letters Button */}
             <div style={{ marginBottom: 16 }}>
               <button
+                onClick={handleGenerateLetters}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -783,21 +1075,6 @@ export default function SurplusFundsResearch() {
               >
                 Surplus Record Details
               </div>
-              <button
-                style={{
-                  padding: '4px',
-                  borderRadius: 4,
-                  border: 'none',
-                  backgroundColor: 'transparent',
-                  color: '#64748B',
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center'
-                }}
-              >
-                <X style={{ width: `clamp(18px, 2.5vw, 20px)`, height: `clamp(18px, 2.5vw, 20px)` }} />
-              </button>
             </div>
 
                 {selectedRecord && (
@@ -907,6 +1184,7 @@ export default function SurplusFundsResearch() {
                           CONTACT HISTORY
                         </div>
                         <button
+                          onClick={() => setIsContactModalOpen(true)}
                           style={{
                             padding: '4px 8px',
                             fontSize: '11px',
@@ -993,6 +1271,7 @@ export default function SurplusFundsResearch() {
                       </div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button
+                          onClick={handleViewOutreach}
                           style={{
                             flex: 1,
                             padding: `clamp(8px, 1vh, 10px) clamp(10px, 1.5vw, 12px)`,
@@ -1008,6 +1287,7 @@ export default function SurplusFundsResearch() {
                           View
                         </button>
                         <button
+                          onClick={handleSendLetter}
                           style={{
                             flex: 1,
                             padding: `clamp(8px, 1vh, 10px) clamp(10px, 1.5vw, 12px)`,
@@ -1035,6 +1315,19 @@ export default function SurplusFundsResearch() {
                         marginBottom: 16
                       }}
                     >
+                      <input 
+                          type="file" 
+                          ref={fileInputRef} 
+                          style={{ display: 'none' }} 
+                          onChange={handleFileChange} 
+                      />
+                      <input 
+                          type="file" 
+                          ref={importInputRef} 
+                          style={{ display: 'none' }} 
+                          onChange={handleImportFileChange}
+                          accept=".csv,.txt"
+                      />
                       <div
                         style={{
                           display: 'flex',
@@ -1055,6 +1348,7 @@ export default function SurplusFundsResearch() {
                           DOCUMENTS
                         </div>
                         <button
+                          onClick={handleUploadClick}
                           style={{
                             padding: `clamp(4px, 0.5vh, 6px) clamp(6px, 1vw, 8px)`,
                             fontSize: `clamp(10px, 1.3vw, 11px)`,
@@ -1072,7 +1366,24 @@ export default function SurplusFundsResearch() {
                         </button>
                       </div>
                       <div style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#64748B' }}>
-                        {selectedRecord.documents?.message || 'No documents available'}
+                        {Array.isArray(selectedRecord.documents) ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {selectedRecord.documents.map((doc: any) => (
+                                    <div key={doc.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px', backgroundColor: '#F8FAFC', borderRadius: '6px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <FileText size={14} color="#64748B" />
+                                            <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{ color: '#0F172A', textDecoration: 'none', fontWeight: 500 }}>
+                                                {doc.name}
+                                            </a>
+                                        </div>
+                                        <span style={{ fontSize: '11px', color: '#94A3B8' }}>{doc.date}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : (
+                            // @ts-ignore
+                            selectedRecord.documents?.message || 'No documents available'
+                        )}
                       </div>
                     </div>
 
@@ -1093,66 +1404,211 @@ export default function SurplusFundsResearch() {
                           color: '#0F172A',
                           textTransform: 'uppercase',
                           letterSpacing: '0.5px',
-                          marginBottom: 12
+                          marginBottom: 12,
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center'
                         }}
                       >
                         RECIPIENT INFO
+                        <button 
+                            onClick={() => {
+                                if (isEditingRecipient) {
+                                    // Reset form on Cancel
+                                    if (selectedRecord) {
+                                        setRecipientForm(selectedRecord.recipientInfo);
+                                    }
+                                }
+                                setIsEditingRecipient(!isEditingRecipient);
+                            }}
+                            style={{
+                                fontSize: '11px',
+                                color: '#1E3A5F',
+                                background: 'none',
+                                border: 'none',
+                                cursor: 'pointer',
+                                textDecoration: 'underline'
+                            }}
+                        >
+                            {isEditingRecipient ? 'Cancel' : 'Edit'}
+                        </button>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                          <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#64748B' }}>Name/Company:</span>
-                          <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#0F172A', fontWeight: 500 }}>
-                            {selectedRecord.recipientInfo?.name || 'Unknown'}
-                          </span>
-                        </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#64748B' }}>Address:</span>
-                      <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#0F172A', fontWeight: 500 }}>
-                        {selectedRecord.recipientInfo.address}
-                      </span>
+                        {isEditingRecipient ? (
+                            <>
+                                <input 
+                                    value={recipientForm.name} 
+                                    onChange={e => setRecipientForm({...recipientForm, name: e.target.value})}
+                                    placeholder="Name/Company"
+                                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #E2E8F0', width: '100%', boxSizing: 'border-box' }}
+                                />
+                                <input 
+                                    value={recipientForm.address} 
+                                    onChange={e => setRecipientForm({...recipientForm, address: e.target.value})}
+                                    placeholder="Address"
+                                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #E2E8F0', width: '100%', boxSizing: 'border-box' }}
+                                />
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                                    <input 
+                                        value={recipientForm.city} 
+                                        onChange={e => setRecipientForm({...recipientForm, city: e.target.value})}
+                                        placeholder="City"
+                                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #E2E8F0', width: '100%', boxSizing: 'border-box' }}
+                                    />
+                                    <input 
+                                        value={recipientForm.state} 
+                                        onChange={e => setRecipientForm({...recipientForm, state: e.target.value})}
+                                        placeholder="State"
+                                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #E2E8F0', width: '100%', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                                <input 
+                                    value={recipientForm.phone} 
+                                    onChange={e => setRecipientForm({...recipientForm, phone: e.target.value})}
+                                    placeholder="Phone"
+                                    style={{ padding: '8px', borderRadius: '4px', border: '1px solid #E2E8F0', width: '100%', boxSizing: 'border-box' }}
+                                />
+                                <button
+                                  onClick={handleUpdateRecipient}
+                                  style={{
+                                    width: '100%',
+                                    marginTop: '8px',
+                                    padding: `clamp(8px, 1.2vh, 10px) clamp(12px, 2vw, 16px)`,
+                                    fontSize: `clamp(12px, 1.5vw, 13px)`,
+                                    fontWeight: 500,
+                                    color: '#FFFFFF',
+                                    backgroundColor: '#1E3A5F',
+                                    border: 'none',
+                                    borderRadius: 8,
+                                    cursor: 'pointer'
+                                  }}
+                                >
+                                  Save Changes
+                                </button>
+                            </>
+                        ) : (
+                            <>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#64748B' }}>Name/Company:</span>
+                                  <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#0F172A', fontWeight: 500 }}>
+                                    {selectedRecord.recipientInfo?.name || 'Unknown'}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#64748B' }}>Address:</span>
+                                  <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#0F172A', fontWeight: 500 }}>
+                                    {selectedRecord.recipientInfo.address}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#64748B' }}>City:</span>
+                                  <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#0F172A', fontWeight: 500 }}>
+                                    {selectedRecord.recipientInfo.city}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#64748B' }}>State:</span>
+                                  <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#0F172A', fontWeight: 500 }}>
+                                    {selectedRecord.recipientInfo.state}
+                                  </span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                                  <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#64748B' }}>Phone:</span>
+                                  <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#0F172A', fontWeight: 500 }}>
+                                    {selectedRecord.recipientInfo.phone}
+                                  </span>
+                                </div>
+                            </>
+                        )}
+                      </div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#64748B' }}>City:</span>
-                      <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#0F172A', fontWeight: 500 }}>
-                        {selectedRecord.recipientInfo.city}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#64748B' }}>State:</span>
-                      <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#0F172A', fontWeight: 500 }}>
-                        {selectedRecord.recipientInfo.state}
-                      </span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#64748B' }}>Phone:</span>
-                      <span style={{ fontSize: `clamp(11px, 1.5vw, 12px)`, color: '#0F172A', fontWeight: 500 }}>
-                        {selectedRecord.recipientInfo.phone}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Save Changes Button */}
-                <button
-                  style={{
-                    width: '100%',
-                    padding: `clamp(10px, 1.5vh, 12px) clamp(12px, 2vw, 16px)`,
-                    fontSize: `clamp(12px, 1.5vw, 13px)`,
-                    fontWeight: 500,
-                    color: '#FFFFFF',
-                    backgroundColor: '#1E3A5F',
-                    border: 'none',
-                    borderRadius: 8,
-                    cursor: 'pointer'
-                  }}
-                >
-                  Save Changes
-                </button>
               </>
             )}
           </div>
         </div>
       </div>
+      
+      {/* Add Record Modal */}
+      {isAddModalOpen && (
+        <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000
+        }}>
+            <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '12px', width: '400px', maxWidth: '90%' }}>
+                <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>New Surplus Fund Research</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <select 
+                        value={newRecordForm.property_id}
+                        onChange={e => setNewRecordForm({...newRecordForm, property_id: e.target.value})}
+                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #E2E8F0' }}
+                    >
+                        <option value="">Select Property</option>
+                        {properties.map((p: any) => (
+                            <option key={p.id} value={p.id}>{p.address} ({p.parcel_id})</option>
+                        ))}
+                    </select>
+                    <input 
+                        type="number"
+                        placeholder="Amount"
+                        value={newRecordForm.amount}
+                        onChange={e => setNewRecordForm({...newRecordForm, amount: e.target.value})}
+                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #E2E8F0' }}
+                    />
+                    <textarea 
+                        placeholder="Notes"
+                        value={newRecordForm.notes}
+                        onChange={e => setNewRecordForm({...newRecordForm, notes: e.target.value})}
+                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #E2E8F0', minHeight: '80px' }}
+                    />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' }}>
+                    <button onClick={() => setIsAddModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer' }}>Cancel</button>
+                    <button onClick={handleAddRecord} style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#1E3A5F', color: '#fff', cursor: 'pointer' }}>Create</button>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Log Contact Modal */}
+      {isContactModalOpen && (
+        <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000
+        }}>
+            <div style={{ backgroundColor: '#fff', padding: '24px', borderRadius: '12px', width: '400px', maxWidth: '90%' }}>
+                <h3 style={{ marginTop: 0, marginBottom: '16px', fontSize: '18px', fontWeight: 600 }}>Log Contact</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <input 
+                        type="date"
+                        value={contactForm.date}
+                        onChange={e => setContactForm({...contactForm, date: e.target.value})}
+                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #E2E8F0' }}
+                    />
+                    <select 
+                        value={contactForm.type}
+                        onChange={e => setContactForm({...contactForm, type: e.target.value})}
+                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #E2E8F0' }}
+                    >
+                        <option value="call">Call</option>
+                        <option value="email">Email</option>
+                        <option value="letter">Letter</option>
+                        <option value="other">Other</option>
+                    </select>
+                    <textarea 
+                        placeholder="Notes"
+                        value={contactForm.notes}
+                        onChange={e => setContactForm({...contactForm, notes: e.target.value})}
+                        style={{ padding: '8px', borderRadius: '4px', border: '1px solid #E2E8F0', minHeight: '80px' }}
+                    />
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' }}>
+                    <button onClick={() => setIsContactModalOpen(false)} style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer' }}>Cancel</button>
+                    <button onClick={handleLogContact} style={{ padding: '8px 16px', borderRadius: '6px', border: 'none', background: '#1E3A5F', color: '#fff', cursor: 'pointer' }}>Save</button>
+                </div>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -271,6 +271,26 @@ export default function Dashboard() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: `clamp(8px, 1.5vw, 12px)`, flexWrap: 'wrap' }}>
             <button
+              onClick={() => navigate('/admin/operations/shares/create')}
+              style={{
+                backgroundColor: '#FFFFFF',
+                color: '#0F172A',
+                padding: `clamp(6px, 1vh, 8px) clamp(12px, 1.5vw, 16px)`,
+                borderRadius: `clamp(4px, 0.5vw, 6px)`,
+                border: '1px solid #E2E8F0',
+                fontSize: `clamp(11px, 1.2vw, 14px)`,
+                fontWeight: 500,
+                display: 'flex',
+                alignItems: 'center',
+                gap: `clamp(4px, 0.5vw, 6px)`,
+                cursor: 'pointer',
+                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                whiteSpace: 'nowrap'
+              }}>
+              <Plus style={{ width: `clamp(12px, 1.2vw, 16px)`, height: `clamp(12px, 1.2vw, 16px)` }} />
+              {isMobile ? 'Share' : 'List Share'}
+            </button>
+            <button
               onClick={() => navigate('/admin/funds/create')}
               style={{
                 backgroundColor: '#FFFFFF',
@@ -448,91 +468,167 @@ export default function Dashboard() {
           })}
         </div>
 
-        {/* Workflow Pipeline + Upcoming Deadlines */}
+        {/* Workflow Pipeline + Workflow Alerts + Upcoming Deadlines */}
         <div
           style={{
             display: 'flex',
             flexDirection: isMobileOrTablet ? 'column' : 'row',
             gap: `clamp(12px, 2vw, 24px)`,
-            alignItems: 'stretch',
+            alignItems: 'flex-start',
             width: '100%',
             marginBottom: `clamp(12px, 2vh, 24px)`
           }}
         >
-          {/* Workflow Pipeline */}
-          <div
-            style={{
-              backgroundColor: '#FFFFFF',
-              padding: `clamp(14px, 1.8vw, 20px)`,
-              borderRadius: `clamp(6px, 0.8vw, 8px)`,
-              border: '1px solid #E2E8F0',
-              width: '100%',
-              maxWidth: '100%',
-              boxSizing: 'border-box',
-              overflow: 'hidden',
-              flex: isMobileOrTablet ? '1 1 100%' : '2 1 0',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `clamp(16px, 2vh, 20px)`, flexWrap: 'wrap', gap: `clamp(8px, 1vw, 12px)` }}>
-              <h2 style={{ fontSize: `clamp(15px, 1.8vw, 18px)`, fontWeight: 600, color: '#0F172A', flexShrink: 0 }}>{workflowPipeline.title}</h2>
-              <button style={{
-                fontSize: `clamp(12px, 1.3vw, 14px)`,
-                color: '#1E3A5F',
-                backgroundColor: 'transparent',
-                border: 'none',
-                cursor: 'pointer',
-                fontWeight: 500,
-                flexShrink: 0,
-                whiteSpace: 'nowrap',
-                padding: 0
-              }}>
-                <Link to="/admin/properties" style={{ textDecoration: 'none', color: 'inherit' }}>
-                  {workflowPipeline.action}
-                </Link>
-              </button>
-            </div>
-            <div className="workflow-scroll" style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: isMobile ? 'flex-start' : 'space-between',
-              gap: `clamp(8px, 1.5vw, 16px)`,
-              overflowX: 'auto',
-              overflowY: 'hidden',
-              paddingBottom: `clamp(6px, 1vh, 8px)`,
-              WebkitOverflowScrolling: 'touch',
-              scrollbarWidth: isMobile ? 'none' : 'thin',
-              msOverflowStyle: isMobile ? 'none' : 'auto',
-              scrollbarColor: '#CBD5E1 transparent'
-            }}>
-              {workflowPipeline.stages.map((stage: WorkflowStage, idx: number) => (
-                <div key={idx} style={{
-                  flexGrow: isMobile ? 0 : 1,
+          {/* Left Column: Pipeline & Alerts */}
+          <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: `clamp(12px, 2vh, 24px)`,
+            flex: isMobileOrTablet ? '1 1 100%' : '2 1 0',
+            width: '100%',
+            minWidth: 0,
+            alignItems: 'stretch'
+          }}>
+            {/* Workflow Pipeline */}
+            <div
+              style={{
+                backgroundColor: '#FFFFFF',
+                padding: `clamp(14px, 1.8vw, 20px)`,
+                borderRadius: `clamp(6px, 0.8vw, 8px)`,
+                border: '1px solid #E2E8F0',
+                width: '100%',
+                boxSizing: 'border-box',
+                overflow: 'hidden',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `clamp(16px, 2vh, 20px)`, flexWrap: 'wrap', gap: `clamp(8px, 1vw, 12px)` }}>
+                <h2 style={{ fontSize: `clamp(15px, 1.8vw, 18px)`, fontWeight: 600, color: '#0F172A', flexShrink: 0 }}>{workflowPipeline.title}</h2>
+                <button style={{
+                  fontSize: `clamp(12px, 1.3vw, 14px)`,
+                  color: '#1E3A5F',
+                  backgroundColor: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontWeight: 500,
                   flexShrink: 0,
-                  flexBasis: isMobile ? 'auto' : '0',
-                  textAlign: 'center',
-                  minWidth: isMobile ? `clamp(50px, 12vw, 70px)` : 'auto',
-                  maxWidth: isMobile ? 'none' : '100%'
+                  whiteSpace: 'nowrap',
+                  padding: 0
                 }}>
-                  <div style={{
-                    width: `clamp(45px, 5vw, 60px)`,
-                    height: `clamp(45px, 5vw, 60px)`,
-                    borderRadius: '50%',
-                    backgroundColor: '#EFF6FF',
-                    border: `clamp(2px, 0.3vw, 3px) solid #1E3A5F`,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    margin: `0 auto clamp(6px, 1vh, 8px)`,
-                    fontSize: `clamp(14px, 2vw, 20px)`,
-                    fontWeight: 700,
-                    color: '#1E3A5F',
-                    flexShrink: 0
+                  <Link to="/admin/properties" style={{ textDecoration: 'none', color: 'inherit' }}>
+                    {workflowPipeline.action}
+                  </Link>
+                </button>
+              </div>
+              <div className="workflow-scroll" style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: isMobile ? 'flex-start' : 'space-between',
+                gap: `clamp(8px, 1.5vw, 16px)`,
+                overflowX: 'auto',
+                overflowY: 'hidden',
+                paddingBottom: `clamp(6px, 1vh, 8px)`,
+                WebkitOverflowScrolling: 'touch',
+                scrollbarWidth: isMobile ? 'none' : 'thin',
+                msOverflowStyle: isMobile ? 'none' : 'auto',
+                scrollbarColor: '#CBD5E1 transparent'
+              }}>
+                {workflowPipeline.stages.map((stage: WorkflowStage, idx: number) => (
+                  <div key={idx} style={{
+                    flexGrow: isMobile ? 0 : 1,
+                    flexShrink: 0,
+                    flexBasis: isMobile ? 'auto' : '0',
+                    textAlign: 'center',
+                    minWidth: isMobile ? `clamp(50px, 12vw, 70px)` : 'auto',
+                    maxWidth: isMobile ? 'none' : '100%'
                   }}>
-                    {stage.value}
+                    <div style={{
+                      width: `clamp(45px, 5vw, 60px)`,
+                      height: `clamp(45px, 5vw, 60px)`,
+                      borderRadius: '50%',
+                      backgroundColor: '#EFF6FF',
+                      border: `clamp(2px, 0.3vw, 3px) solid #1E3A5F`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      margin: `0 auto clamp(6px, 1vh, 8px)`,
+                      fontSize: `clamp(14px, 2vw, 20px)`,
+                      fontWeight: 700,
+                      color: '#1E3A5F',
+                      flexShrink: 0
+                    }}>
+                      {stage.value}
+                    </div>
+                    <div style={{ fontSize: `clamp(10px, 1.1vw, 12px)`, color: '#64748B', fontWeight: 500, whiteSpace: 'nowrap' }}>{stage.label}</div>
                   </div>
-                  <div style={{ fontSize: `clamp(10px, 1.1vw, 12px)`, color: '#64748B', fontWeight: 500, whiteSpace: 'nowrap' }}>{stage.label}</div>
-                </div>
-              ))}
+                ))}
+              </div>
+            </div>
+
+            {/* Workflow Alerts (Moved) */}
+            <div style={{ backgroundColor: '#FFFFFF', padding: `clamp(14px, 1.8vw, 20px)`, borderRadius: `clamp(6px, 0.8vw, 8px)`, border: '1px solid #E2E8F0', width: '100%', boxSizing: 'border-box', overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `clamp(16px, 2vh, 20px)`, flexWrap: 'wrap', gap: `clamp(6px, 1vw, 8px)` }}>
+                <h2 style={{ fontSize: `clamp(15px, 1.8vw, 18px)`, fontWeight: 600, color: '#0F172A' }}>{workflowAlerts.title}</h2>
+                <span style={{ fontSize: `clamp(11px, 1.2vw, 13px)`, color: '#64748B' }}>{workflowAlerts.subtitle}</span>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(240px, 1fr))', gap: `clamp(10px, 1.5vw, 16px)` }}>
+                {workflowAlerts.alerts.map((alert: WorkflowAlert, idx: number) => {
+                  const AlertIcon = iconMap[alert.icon];
+                  return (
+                    <div key={idx} style={{
+                      padding: `clamp(12px, 1.5vw, 16px)`,
+                      backgroundColor: '#F8FAFC',
+                      borderRadius: `clamp(4px, 0.5vw, 6px)`,
+                      border: '1px solid #E2E8F0'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: `clamp(10px, 1.5vw, 12px)`, marginBottom: `clamp(10px, 1.5vw, 12px)`, flexWrap: 'wrap' }}>
+                        <div style={{
+                          width: `clamp(32px, 4vw, 40px)`,
+                          height: `clamp(32px, 4vw, 40px)`,
+                          borderRadius: `clamp(6px, 0.8vw, 8px)`,
+                          backgroundColor: '#FEF2F2',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          flexShrink: 0
+                        }}>
+                          <AlertIcon style={{ width: `clamp(16px, 2vw, 20px)`, height: `clamp(16px, 2vw, 20px)`, color: alert.color }} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: `clamp(12px, 1.3vw, 14px)`, fontWeight: 600, color: '#0F172A', marginBottom: `clamp(1px, 0.3vh, 2px)`, lineHeight: 1.3 }}>{alert.title}</div>
+                          <div style={{ fontSize: `clamp(16px, 2.2vw, 20px)`, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{alert.value}</div>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: `clamp(10px, 1.1vw, 12px)`, color: '#64748B', marginBottom: `clamp(6px, 1vh, 8px)` }}>{alert.subtext}</div>
+                      <button style={{
+                        fontSize: `clamp(11px, 1.2vw, 13px)`,
+                        color: '#1E3A5F',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        cursor: 'pointer',
+                        fontWeight: 500,
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: `clamp(3px, 0.5vw, 4px)`,
+                        padding: 0
+                      }}>
+                        <Link
+                          to={(() => {
+                            const t = alert.title.toLowerCase();
+                            if (t.includes('sheriff')) return '/admin/properties/sheriff-workflow';
+                            if (t.includes('redemption')) return '/admin/properties/redemption-tracking';
+                            if (t.includes('qt') || t.includes('quiet')) return '/admin/properties/quiet-title';
+                            if (t.includes('barment')) return '/admin/properties/barment';
+                            return '/admin/properties';
+                          })()}
+                          style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 'inherit' }}
+                        >
+                          View List <ArrowRight style={{ width: `clamp(10px, 1.2vw, 12px)`, height: `clamp(10px, 1.2vw, 12px)` }} />
+                        </Link>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
@@ -866,72 +962,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* Workflow Alerts - full width */}
-        <div style={{ backgroundColor: '#FFFFFF', padding: `clamp(14px, 1.8vw, 20px)`, borderRadius: `clamp(6px, 0.8vw, 8px)`, border: '1px solid #E2E8F0', width: '100%', maxWidth: '100%', boxSizing: 'border-box', overflow: 'hidden', marginBottom: `clamp(12px, 2vh, 24px)` }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `clamp(16px, 2vh, 20px)`, flexWrap: 'wrap', gap: `clamp(6px, 1vw, 8px)` }}>
-            <h2 style={{ fontSize: `clamp(15px, 1.8vw, 18px)`, fontWeight: 600, color: '#0F172A' }}>{workflowAlerts.title}</h2>
-            <span style={{ fontSize: `clamp(11px, 1.2vw, 13px)`, color: '#64748B' }}>{workflowAlerts.subtitle}</span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : isTablet ? 'repeat(2, 1fr)' : 'repeat(2, 1fr)', gap: `clamp(10px, 1.5vw, 16px)` }}>
-            {workflowAlerts.alerts.map((alert: WorkflowAlert, idx: number) => {
-              const AlertIcon = iconMap[alert.icon];
-              return (
-                <div key={idx} style={{
-                  padding: `clamp(12px, 1.5vw, 16px)`,
-                  backgroundColor: '#F8FAFC',
-                  borderRadius: `clamp(4px, 0.5vw, 6px)`,
-                  border: '1px solid #E2E8F0'
-                }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: `clamp(10px, 1.5vw, 12px)`, marginBottom: `clamp(10px, 1.5vw, 12px)`, flexWrap: 'wrap' }}>
-                    <div style={{
-                      width: `clamp(32px, 4vw, 40px)`,
-                      height: `clamp(32px, 4vw, 40px)`,
-                      borderRadius: `clamp(6px, 0.8vw, 8px)`,
-                      backgroundColor: '#FEF2F2',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}>
-                      <AlertIcon style={{ width: `clamp(16px, 2vw, 20px)`, height: `clamp(16px, 2vw, 20px)`, color: alert.color }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: `clamp(12px, 1.3vw, 14px)`, fontWeight: 600, color: '#0F172A', marginBottom: `clamp(1px, 0.3vh, 2px)`, lineHeight: 1.3 }}>{alert.title}</div>
-                      <div style={{ fontSize: `clamp(16px, 2.2vw, 20px)`, fontWeight: 700, color: '#0F172A', lineHeight: 1.2 }}>{alert.value}</div>
-                    </div>
-                  </div>
-                  <div style={{ fontSize: `clamp(10px, 1.1vw, 12px)`, color: '#64748B', marginBottom: `clamp(6px, 1vh, 8px)` }}>{alert.subtext}</div>
-                  <button style={{
-                    fontSize: `clamp(11px, 1.2vw, 13px)`,
-                    color: '#1E3A5F',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    cursor: 'pointer',
-                    fontWeight: 500,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: `clamp(3px, 0.5vw, 4px)`,
-                    padding: 0
-                  }}>
-                    <Link
-                      to={(() => {
-                        const t = alert.title.toLowerCase();
-                        if (t.includes('sheriff')) return '/admin/properties/sheriff-workflow';
-                        if (t.includes('redemption')) return '/admin/properties/redemption-tracking';
-                        if (t.includes('qt') || t.includes('quiet')) return '/admin/properties/quiet-title';
-                        if (t.includes('barment')) return '/admin/properties/barment';
-                        return '/admin/properties';
-                      })()}
-                      style={{ textDecoration: 'none', color: 'inherit', display: 'flex', alignItems: 'center', gap: 'inherit' }}
-                    >
-                      View List <ArrowRight style={{ width: `clamp(10px, 1.2vw, 12px)`, height: `clamp(10px, 1.2vw, 12px)` }} />
-                    </Link>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+
 
         {/* Recent Activity + Quick Stats row */}
         <div

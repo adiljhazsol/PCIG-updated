@@ -155,6 +155,17 @@ interface NoticeData {
   detailPanel?: any;
 }
 
+interface PropertyOption {
+  id: number;
+  address: string;
+  parcel_id: string;
+}
+
+interface TemplateOption {
+  id: number;
+  name: string;
+}
+
 export default function NoticeLetters() {
   const navigate = useNavigate();
   const isMobile = useIsMobile();
@@ -167,6 +178,23 @@ export default function NoticeLetters() {
   const [selectedNotices, setSelectedNotices] = useState<Set<string>>(new Set());
   const [selectedNoticeId, setSelectedNoticeId] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [properties, setProperties] = useState<PropertyOption[]>([]);
+  const [templates, setTemplates] = useState<TemplateOption[]>([]);
+  const [newNotice, setNewNotice] = useState({
+    property_id: '',
+    template_id: '',
+    recipient_name: '',
+    recipient_address: ''
+  });
+  const [editNotice, setEditNotice] = useState({
+    id: '',
+    property_id: '',
+    template_id: '',
+    recipient_name: '',
+    recipient_address: ''
+  });
 
   // Filters & Search State
   const [search, setSearch] = useState('');
@@ -227,8 +255,88 @@ export default function NoticeLetters() {
   };
 
   const handleCreateNotice = () => {
-    navigate('/admin/properties/workflow-hub');
+    setIsCreateModalOpen(true);
   };
+
+  const handleModalClose = () => {
+    setIsCreateModalOpen(false);
+    setNewNotice({
+        property_id: '',
+        template_id: '',
+        recipient_name: '',
+        recipient_address: ''
+    });
+  };
+
+  const handleEditModalClose = () => {
+    setIsEditModalOpen(false);
+    setEditNotice({
+        id: '',
+        property_id: '',
+        template_id: '',
+        recipient_name: '',
+        recipient_address: ''
+    });
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProcessing(true);
+    try {
+        const response = await api.put(`/admin/notices/${editNotice.id}`, {
+            property_id: editNotice.property_id,
+            template_id: editNotice.template_id,
+            recipient_name: editNotice.recipient_name,
+            recipient_address: editNotice.recipient_address
+        });
+        if (response.data.success) {
+            alert('Notice updated successfully');
+            handleEditModalClose();
+            fetchData();
+        }
+    } catch (err) {
+        console.error('Failed to update notice', err);
+        alert('Failed to update notice');
+    } finally {
+        setProcessing(false);
+    }
+  };
+
+  const handleCreateSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setProcessing(true);
+    try {
+        const response = await api.post('/admin/notices', newNotice);
+        if (response.data.success) {
+            alert('Notice created successfully');
+            handleModalClose();
+            fetchData();
+        }
+    } catch (err) {
+        console.error('Failed to create notice', err);
+        alert('Failed to create notice');
+    } finally {
+        setProcessing(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isCreateModalOpen || isEditModalOpen) {
+        const fetchDropdowns = async () => {
+            try {
+                const [propsRes, tempsRes] = await Promise.all([
+                    api.get('/admin/properties/dropdown'),
+                    api.get('/admin/notices/templates')
+                ]);
+                setProperties(propsRes.data);
+                setTemplates(tempsRes.data.data);
+            } catch (err) {
+                console.error('Failed to load dropdowns', err);
+            }
+        };
+        fetchDropdowns();
+    }
+  }, [isCreateModalOpen, isEditModalOpen]);
 
   const handleGenerateSingle = async (id: string) => {
     if (!window.confirm('Generate letter for this notice?')) return;
@@ -284,6 +392,57 @@ export default function NoticeLetters() {
   const handleFilterChange = (filterLabel: string, value: string) => {
       if (filterLabel === 'Status') setStatusFilter(value);
       if (filterLabel === 'Date Range') setDateRangeFilter(value);
+  };
+
+  const handleSend = async (id: string) => {
+      if (!window.confirm('Mark this notice as sent?')) return;
+      try {
+          const response = await api.post(`/admin/notices/${id}/send`);
+          if (response.data.success) {
+              alert(response.data.message);
+              fetchData();
+          }
+      } catch (err) {
+          console.error('Send failed', err);
+          alert('Failed to mark as sent.');
+      }
+  };
+
+  const handlePreview = async (id: string) => {
+      try {
+          const response = await api.get(`/admin/notices/${id}/preview`);
+          if (response.data.url) {
+              window.open(response.data.url, '_blank');
+          } else {
+              alert('Preview not available.');
+          }
+      } catch (err) {
+          console.error('Preview failed', err);
+          alert('Failed to preview.');
+      }
+  };
+
+  const handleEdit = async (id: string) => {
+      setProcessing(true);
+      try {
+          const response = await api.get(`/admin/notices/${id}`);
+          if (response.data.success) {
+              const notice = response.data.data;
+              setEditNotice({
+                  id: notice.id,
+                  property_id: notice.property_id,
+                  template_id: notice.template_id,
+                  recipient_name: notice.recipient_name,
+                  recipient_address: notice.recipient_address
+              });
+              setIsEditModalOpen(true);
+          }
+      } catch (err) {
+          console.error('Failed to fetch notice details', err);
+          alert('Failed to load notice details.');
+      } finally {
+          setProcessing(false);
+      }
   };
 
   // Set initial selected notice when data loads
@@ -1440,6 +1599,7 @@ export default function NoticeLetters() {
                   </button>
               ) : (
                   <button
+                    onClick={() => selectedNoticeId && handleSend(selectedNoticeId)}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -1462,6 +1622,7 @@ export default function NoticeLetters() {
                   </button>
               )}
               <button
+                onClick={() => selectedNoticeId && handlePreview(selectedNoticeId)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1483,6 +1644,7 @@ export default function NoticeLetters() {
                 <span style={{ whiteSpace: 'nowrap' }}>{detailPanel.actions.preview.label}</span>
               </button>
               <button
+                onClick={() => selectedNoticeId && handleEdit(selectedNoticeId)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1507,6 +1669,340 @@ export default function NoticeLetters() {
           </div>
         </div>
       </div>
+      
+      {/* Create Notice Modal */}
+      {isCreateModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          padding: 16
+        }}>
+          <div style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 12,
+            width: '100%',
+            maxWidth: 500,
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: '1px solid #E2E8F0',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#0F172A' }}>Create New Notice</h3>
+              <button onClick={handleModalClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <X style={{ width: 20, height: 20, color: '#64748B' }} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleCreateSubmit} style={{ padding: '24px' }}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>
+                  Property <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <select
+                  required
+                  value={newNotice.property_id}
+                  onChange={(e) => setNewNotice({...newNotice, property_id: e.target.value})}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    backgroundColor: '#FFFFFF'
+                  }}
+                >
+                  <option value="">Select Property</option>
+                  {properties.map(p => (
+                    <option key={p.id} value={p.id}>{p.address} ({p.parcel_id})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>
+                  Notice Template <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <select
+                  required
+                  value={newNotice.template_id}
+                  onChange={(e) => setNewNotice({...newNotice, template_id: e.target.value})}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    backgroundColor: '#FFFFFF'
+                  }}
+                >
+                  <option value="">Select Template</option>
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>
+                  Recipient Name <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newNotice.recipient_name}
+                  onChange={(e) => setNewNotice({...newNotice, recipient_name: e.target.value})}
+                  placeholder="e.g. John Doe"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>
+                  Recipient Address <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newNotice.recipient_address}
+                  onChange={(e) => setNewNotice({...newNotice, recipient_address: e.target.value})}
+                  placeholder="e.g. 123 Main St, City, State 12345"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={handleModalClose}
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    backgroundColor: '#FFFFFF',
+                    color: '#64748B',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={processing}
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: 6,
+                    border: 'none',
+                    backgroundColor: '#8B5CF6',
+                    color: '#FFFFFF',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: processing ? 'not-allowed' : 'pointer',
+                    opacity: processing ? 0.7 : 1
+                  }}
+                >
+                  {processing ? 'Creating...' : 'Create Notice'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Notice Modal */}
+      {isEditModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          padding: 16
+        }}>
+          <div style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 12,
+            width: '100%',
+            maxWidth: 500,
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              padding: '20px 24px',
+              borderBottom: '1px solid #E2E8F0',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600, color: '#0F172A' }}>Edit Notice</h3>
+              <button onClick={handleEditModalClose} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}>
+                <X style={{ width: 20, height: 20, color: '#64748B' }} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleEditSubmit} style={{ padding: '24px' }}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>
+                  Property <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <select
+                  required
+                  value={editNotice.property_id}
+                  onChange={(e) => setEditNotice({...editNotice, property_id: e.target.value})}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    backgroundColor: '#FFFFFF'
+                  }}
+                >
+                  <option value="">Select Property</option>
+                  {properties.map(p => (
+                    <option key={p.id} value={p.id}>{p.address} ({p.parcel_id})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>
+                  Notice Template <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <select
+                  required
+                  value={editNotice.template_id}
+                  onChange={(e) => setEditNotice({...editNotice, template_id: e.target.value})}
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    backgroundColor: '#FFFFFF'
+                  }}
+                >
+                  <option value="">Select Template</option>
+                  {templates.map(t => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>
+                  Recipient Name <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editNotice.recipient_name}
+                  onChange={(e) => setEditNotice({...editNotice, recipient_name: e.target.value})}
+                  placeholder="e.g. John Doe"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>
+                  Recipient Address <span style={{ color: '#EF4444' }}>*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editNotice.recipient_address}
+                  onChange={(e) => setEditNotice({...editNotice, recipient_address: e.target.value})}
+                  placeholder="e.g. 123 Main St, City, State 12345"
+                  style={{
+                    width: '100%',
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={handleEditModalClose}
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    backgroundColor: '#FFFFFF',
+                    color: '#64748B',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={processing}
+                  style={{
+                    padding: '10px 16px',
+                    borderRadius: 6,
+                    border: 'none',
+                    backgroundColor: '#8B5CF6',
+                    color: '#FFFFFF',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: processing ? 'not-allowed' : 'pointer',
+                    opacity: processing ? 0.7 : 1
+                  }}
+                >
+                  {processing ? 'Updating...' : 'Update Notice'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

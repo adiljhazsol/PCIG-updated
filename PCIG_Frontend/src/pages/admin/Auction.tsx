@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
     Calendar,
     AlertCircle,
@@ -9,7 +9,8 @@ import {
     Plus,
     Search,
     ChevronDown,
-    MoreHorizontal
+    MoreHorizontal,
+    X
 } from 'lucide-react';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
 import AdminNav from '../../components/admin/AdminNav';
@@ -20,31 +21,197 @@ import api from '../../services/api';
 export default function Auction() {
     const isMobile = useIsMobile();
     const isTablet = useIsTablet();
+    const fileInputRef = useRef<HTMLInputElement>(null);
 
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState('auction-ready');
 
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const response = await api.get('/admin/auction/dashboard-data');
-                if (response.data && response.data.auction) {
-                    setData(response.data.auction);
-                } else {
-                    setError('Failed to load auction data');
-                }
-            } catch (err) {
-                console.error('Error fetching auction data:', err);
-                setError('An error occurred while loading data');
-            } finally {
-                setLoading(false);
-            }
-        };
+    // Filter states
+    const [searchQuery, setSearchQuery] = useState('');
+    const [statusFilter, setStatusFilter] = useState('');
+    const [countyFilter, setCountyFilter] = useState('');
+    const [dateRangeFilter, setDateRangeFilter] = useState('');
 
-        fetchData();
-    }, []);
+    // Modal states
+    const [showScheduleModal, setShowScheduleModal] = useState(false);
+    const [showResultModal, setShowResultModal] = useState(false);
+    const [availableProperties, setAvailableProperties] = useState<any[]>([]);
+    const [selectedAuctionId, setSelectedAuctionId] = useState<string | null>(null);
+
+    // Form states
+    const [newAuction, setNewAuction] = useState({
+        property_id: '',
+        auction_date: '',
+        auction_time: '', // separate time field for UI
+        location: '',
+        starting_bid: '',
+        notes: ''
+    });
+
+    const [auctionResult, setAuctionResult] = useState({
+        winning_bid: '',
+        winner_info: '',
+        status: 'completed' // default to completed
+    });
+
+    const fetchData = async () => {
+        try {
+            setLoading(true);
+            const params = new URLSearchParams();
+            if (activeTab) params.append('tab', activeTab);
+            if (searchQuery) params.append('search', searchQuery);
+            if (statusFilter) params.append('status', statusFilter);
+            if (countyFilter) params.append('county', countyFilter);
+            if (dateRangeFilter) params.append('date_range', dateRangeFilter);
+
+            const response = await api.get(`/admin/auction/dashboard-data?${params.toString()}`);
+            if (response.data && response.data.auction) {
+                setData(response.data.auction);
+            } else {
+                setError('Failed to load auction data');
+            }
+        } catch (err) {
+            console.error('Error fetching auction data:', err);
+            setError('An error occurred while loading data');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        const timeoutId = setTimeout(() => {
+            fetchData();
+        }, 300); // Debounce search
+        return () => clearTimeout(timeoutId);
+    }, [activeTab, searchQuery, statusFilter, countyFilter, dateRangeFilter]);
+
+    const handleClearFilters = () => {
+        setSearchQuery('');
+        setStatusFilter('');
+        setCountyFilter('');
+        setDateRangeFilter('');
+    };
+
+    const fetchAvailableProperties = async () => {
+        try {
+            const response = await api.get('/admin/auction/available-properties');
+            setAvailableProperties(response.data);
+        } catch (err) {
+            console.error('Error fetching available properties:', err);
+        }
+    };
+
+    const handleScheduleAuction = async () => {
+        try {
+            // Combine date and time
+            const dateTime = newAuction.auction_time 
+                ? `${newAuction.auction_date} ${newAuction.auction_time}`
+                : newAuction.auction_date;
+
+            await api.post('/admin/auction/schedule', {
+                ...newAuction,
+                auction_date: dateTime
+            });
+            setShowScheduleModal(false);
+            setNewAuction({
+                property_id: '',
+                auction_date: '',
+                auction_time: '',
+                location: '',
+                starting_bid: '',
+                notes: ''
+            });
+            fetchData();
+        } catch (err) {
+            console.error('Error scheduling auction:', err);
+            alert('Failed to schedule auction');
+        }
+    };
+
+    const handleEnterResult = async () => {
+        if (!selectedAuctionId) return;
+        try {
+            await api.post(`/admin/auction/${selectedAuctionId}/complete`, auctionResult);
+            setShowResultModal(false);
+            setAuctionResult({
+                winning_bid: '',
+                winner_info: '',
+                status: 'completed'
+            });
+            setSelectedAuctionId(null);
+            fetchData();
+        } catch (err) {
+            console.error('Error completing auction:', err);
+            alert('Failed to complete auction');
+        }
+    };
+
+    const handleExport = () => {
+        const params = new URLSearchParams();
+        if (activeTab) params.append('tab', activeTab);
+        if (searchQuery) params.append('search', searchQuery);
+        if (statusFilter) params.append('status', statusFilter);
+        if (countyFilter) params.append('county', countyFilter);
+        if (dateRangeFilter) params.append('date_range', dateRangeFilter);
+
+        api.get(`/admin/auction/export?${params.toString()}`, { responseType: 'blob' })
+            .then((response) => {
+                const url = window.URL.createObjectURL(new Blob([response.data]));
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', 'auction_calendar.csv');
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+            })
+            .catch((err) => {
+                console.error('Export failed:', err);
+                alert('Export failed');
+            });
+    };
+
+    const handleImportClick = () => {
+        fileInputRef.current?.click();
+    };
+
+    const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            await api.post('/admin/auction/import', formData);
+            alert('Import successful');
+            fetchData();
+        } catch (err) {
+            console.error('Import failed:', err);
+            alert('Import failed');
+        } finally {
+            if (fileInputRef.current) fileInputRef.current.value = '';
+        }
+    };
+
+    const openResultModal = (auctionId: string) => {
+        // auctionId is property ID in the row data, wait.
+        // The queue row has 'id' which is property ID. 
+        // AdminAuctionController complete method expects auction ID?
+        // Let's check AdminAuctionController.php again.
+        // public function complete(Request $request, $id) -> Auction::findOrFail($id)
+        // The queue row has property id. The backend dashboardData maps property id to row id.
+        // But the row data DOES NOT include auction ID explicitly?
+        // Let's check dashboardData in AdminAuctionController.
+        // 'id' => $prop->id.
+        // We need the AUCTION ID to call complete.
+        // I need to update AdminAuctionController to include auction_id in the row data.
+        
+        // Temporarily assuming I fix backend to include auction_id.
+        setSelectedAuctionId(auctionId);
+        setShowResultModal(true);
+    };
 
     const getIcon = (iconName: string) => {
         const icons: any = { Calendar, AlertCircle, CheckCircle2, FileText, Download, Upload, Plus };
@@ -254,6 +421,8 @@ export default function Auction() {
                             <input
                                 type="text"
                                 placeholder="Search parcels, addresses, dates..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
                                 style={{
                                     width: '100%',
                                     padding: '10px 10px 10px 40px',
@@ -265,9 +434,26 @@ export default function Auction() {
                                 }}
                             />
                         </div>
-                        {filters.map((filter: any, idx: number) => (
+                        {filters.map((filter: any, idx: number) => {
+                             const handleChange = (e: any) => {
+                                 const val = e.target.value;
+                                 if (filter.label === 'Status') setStatusFilter(val);
+                                 if (filter.label === 'County') setCountyFilter(val);
+                                 if (filter.label === 'Date Range') setDateRangeFilter(val);
+                             };
+                             const getValue = () => {
+                                 if (filter.label === 'Status') return statusFilter;
+                                 if (filter.label === 'County') return countyFilter;
+                                 if (filter.label === 'Date Range') return dateRangeFilter;
+                                 return '';
+                             };
+
+                             return (
                             <div key={idx} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
-                                <select style={{
+                                <select 
+                                    onChange={handleChange}
+                                    value={getValue()}
+                                    style={{
                                     appearance: 'none',
                                     padding: '10px 32px 10px 16px',
                                     border: '1px solid #E2E8F0',
@@ -279,12 +465,14 @@ export default function Auction() {
                                     fontWeight: 500,
                                     width: isMobile ? '100%' : 'auto'
                                 }}>
-                                    {filter.options.map((opt: string, i: number) => <option key={i}>{opt}</option>)}
+                                    {filter.options.map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
                                 </select>
                                 <ChevronDown size={14} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748B', pointerEvents: 'none' }} />
                             </div>
-                        ))}
-                        <button style={{
+                        )})}
+                        <button 
+                            onClick={handleClearFilters}
+                            style={{
                             background: 'none',
                             border: 'none',
                             color: '#64748B',
@@ -298,7 +486,9 @@ export default function Auction() {
                         </button>
                     </div>
                     <div style={{ display: 'flex', gap: 12, width: isMobile ? '100%' : 'auto', flexDirection: isMobile ? 'column' : 'row' }}>
-                        <button style={{
+                        <button 
+                            onClick={handleExport}
+                            style={{
                             backgroundColor: '#fff',
                             color: '#1E3A5F',
                             border: '1px solid #E2E8F0',
@@ -315,7 +505,9 @@ export default function Auction() {
                         }}>
                             <Download size={16} /> {exportSheetsBtn.label}
                         </button>
-                        <button style={{
+                        <button 
+                            onClick={handleImportClick}
+                            style={{
                             backgroundColor: '#fff',
                             color: '#1E3A5F',
                             border: '1px solid #E2E8F0',
@@ -332,21 +524,34 @@ export default function Auction() {
                         }}>
                             <Upload size={16} /> {importResultsBtn.label}
                         </button>
-                        <button style={{
-                            backgroundColor: '#1E3A5F',
-                            color: '#fff',
-                            border: 'none',
-                            borderRadius: 6,
-                            padding: '10px 16px',
-                            fontSize: 14,
-                            fontWeight: 600,
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: 8,
-                            cursor: 'pointer',
-                            justifyContent: 'center',
-                            flex: isMobile ? 1 : 'initial'
-                        }}>
+                        <input 
+                            type="file" 
+                            ref={fileInputRef} 
+                            style={{ display: 'none' }} 
+                            accept=".csv,.txt"
+                            onChange={handleFileChange}
+                        />
+                        <button 
+                            onClick={() => {
+                                setShowScheduleModal(true);
+                                fetchAvailableProperties();
+                            }}
+                            style={{
+                                backgroundColor: '#1E3A5F',
+                                color: '#fff',
+                                border: 'none',
+                                borderRadius: 6,
+                                padding: '10px 16px',
+                                fontSize: 14,
+                                fontWeight: 600,
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: 8,
+                                cursor: 'pointer',
+                                justifyContent: 'center',
+                                flex: isMobile ? 1 : 'initial'
+                            }}
+                        >
                             <Plus size={16} /> {createAuctionBtn.label}
                         </button>
                     </div>
@@ -418,17 +623,20 @@ export default function Auction() {
                                             {getPrepStatusBadge(row.prepStatus, row.prepStatusColor)}
                                         </td>
                                         <td style={{ padding: '16px' }}>
-                                            {row.status === 'Today' ? (
-                                                <button style={{
-                                                    backgroundColor: '#1E3A5F',
-                                                    color: '#fff',
-                                                    border: 'none',
-                                                    borderRadius: 6,
-                                                    padding: '6px 12px',
-                                                    fontSize: 12,
-                                                    fontWeight: 600,
-                                                    cursor: 'pointer'
-                                                }}>
+                                            {row.status === 'Scheduled' ? (
+                                                <button 
+                                                    onClick={() => openResultModal(row.auction_id)}
+                                                    style={{
+                                                        backgroundColor: '#1E3A5F',
+                                                        color: '#fff',
+                                                        border: 'none',
+                                                        borderRadius: 6,
+                                                        padding: '6px 12px',
+                                                        fontSize: 12,
+                                                        fontWeight: 600,
+                                                        cursor: 'pointer'
+                                                    }}
+                                                >
                                                     Enter Result
                                                 </button>
                                             ) : row.status === 'Post-Auction' ? (
@@ -455,6 +663,336 @@ export default function Auction() {
                     </div>
                 </div>
             </div>
+
+            {/* Schedule Auction Modal */}
+            {showScheduleModal && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    zIndex: 50
+                }}>
+                    <div style={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: 12,
+                        width: '100%',
+                        maxWidth: '500px',
+                        padding: '24px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        maxHeight: '90vh',
+                        overflowY: 'auto'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <h2 style={{ fontSize: '20px', fontWeight: 600, color: '#0F172A', margin: 0 }}>Schedule Auction</h2>
+                            <button
+                                onClick={() => setShowScheduleModal(false)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+                            >
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                                    Property
+                                </label>
+                                <select
+                                    value={newAuction.property_id}
+                                    onChange={(e) => setNewAuction({ ...newAuction, property_id: e.target.value })}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        borderRadius: 8,
+                                        border: '1px solid #E2E8F0',
+                                        fontSize: '14px'
+                                    }}
+                                >
+                                    <option value="">Select a property...</option>
+                                    {availableProperties.map((prop) => (
+                                        <option key={prop.id} value={prop.id}>
+                                            {prop.address} {prop.city ? `, ${prop.city}` : ''}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                                        Date
+                                    </label>
+                                    <input
+                                        type="date"
+                                        value={newAuction.auction_date}
+                                        onChange={(e) => setNewAuction({ ...newAuction, auction_date: e.target.value })}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px',
+                                            borderRadius: 8,
+                                            border: '1px solid #E2E8F0',
+                                            fontSize: '14px'
+                                        }}
+                                    />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                                        Time
+                                    </label>
+                                    <input
+                                        type="time"
+                                        value={newAuction.auction_time}
+                                        onChange={(e) => setNewAuction({ ...newAuction, auction_time: e.target.value })}
+                                        style={{
+                                            width: '100%',
+                                            padding: '10px',
+                                            borderRadius: 8,
+                                            border: '1px solid #E2E8F0',
+                                            fontSize: '14px'
+                                        }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                                    Location
+                                </label>
+                                <input
+                                    type="text"
+                                    value={newAuction.location}
+                                    onChange={(e) => setNewAuction({ ...newAuction, location: e.target.value })}
+                                    placeholder="e.g. County Courthouse Steps"
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        borderRadius: 8,
+                                        border: '1px solid #E2E8F0',
+                                        fontSize: '14px'
+                                    }}
+                                />
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                                    Starting Bid
+                                </label>
+                                <input
+                                    type="number"
+                                    value={newAuction.starting_bid}
+                                    onChange={(e) => setNewAuction({ ...newAuction, starting_bid: e.target.value })}
+                                    placeholder="0.00"
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        borderRadius: 8,
+                                        border: '1px solid #E2E8F0',
+                                        fontSize: '14px'
+                                    }}
+                                />
+                            </div>
+
+                            <div>
+                                <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                                    Notes
+                                </label>
+                                <textarea
+                                    value={newAuction.notes}
+                                    onChange={(e) => setNewAuction({ ...newAuction, notes: e.target.value })}
+                                    rows={3}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        borderRadius: 8,
+                                        border: '1px solid #E2E8F0',
+                                        fontSize: '14px',
+                                        resize: 'none'
+                                    }}
+                                />
+                            </div>
+
+                            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                                <button
+                                    onClick={() => setShowScheduleModal(false)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px',
+                                        borderRadius: 8,
+                                        border: '1px solid #E2E8F0',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#64748B',
+                                        fontSize: '14px',
+                                        fontWeight: 500,
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleScheduleAuction}
+                                    disabled={!newAuction.property_id || !newAuction.auction_date || !newAuction.starting_bid}
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px',
+                                        borderRadius: 8,
+                                        border: 'none',
+                                        backgroundColor: (!newAuction.property_id || !newAuction.auction_date || !newAuction.starting_bid) ? '#94A3B8' : '#1D4ED8',
+                                        color: '#FFFFFF',
+                                        fontSize: '14px',
+                                        fontWeight: 500,
+                                        cursor: (!newAuction.property_id || !newAuction.auction_date || !newAuction.starting_bid) ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    Schedule
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Enter Result Modal */}
+            {showResultModal && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    zIndex: 50
+                }}>
+                    <div style={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: 12,
+                        width: '100%',
+                        maxWidth: '500px',
+                        padding: '24px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+                        maxHeight: '90vh',
+                        overflowY: 'auto'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <h2 style={{ fontSize: '20px', fontWeight: 600, color: '#0F172A', margin: 0 }}>Enter Auction Result</h2>
+                            <button
+                                onClick={() => setShowResultModal(false)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+                            >
+                                <X size={24} />
+                            </button>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                            <div>
+                                <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                                    Outcome
+                                </label>
+                                <select
+                                    value={auctionResult.status}
+                                    onChange={(e) => setAuctionResult({ ...auctionResult, status: e.target.value })}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px',
+                                        borderRadius: 8,
+                                        border: '1px solid #E2E8F0',
+                                        fontSize: '14px'
+                                    }}
+                                >
+                                    <option value="completed">Sold (Completed)</option>
+                                    <option value="failed">Failed / No Sale</option>
+                                    <option value="cancelled">Cancelled</option>
+                                </select>
+                            </div>
+
+                            {auctionResult.status === 'completed' && (
+                                <>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                                            Winning Bid Amount
+                                        </label>
+                                        <input
+                                            type="number"
+                                            value={auctionResult.winning_bid}
+                                            onChange={(e) => setAuctionResult({ ...auctionResult, winning_bid: e.target.value })}
+                                            placeholder="0.00"
+                                            style={{
+                                                width: '100%',
+                                                padding: '10px',
+                                                borderRadius: 8,
+                                                border: '1px solid #E2E8F0',
+                                                fontSize: '14px'
+                                            }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                                            Winner Info (Optional)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={auctionResult.winner_info}
+                                            onChange={(e) => setAuctionResult({ ...auctionResult, winner_info: e.target.value })}
+                                            placeholder="Name or details"
+                                            style={{
+                                                width: '100%',
+                                                padding: '10px',
+                                                borderRadius: 8,
+                                                border: '1px solid #E2E8F0',
+                                                fontSize: '14px'
+                                            }}
+                                        />
+                                    </div>
+                                </>
+                            )}
+
+                            <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                                <button
+                                    onClick={() => setShowResultModal(false)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px',
+                                        borderRadius: 8,
+                                        border: '1px solid #E2E8F0',
+                                        backgroundColor: '#FFFFFF',
+                                        color: '#64748B',
+                                        fontSize: '14px',
+                                        fontWeight: 500,
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleEnterResult}
+                                    disabled={auctionResult.status === 'completed' && !auctionResult.winning_bid}
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px',
+                                        borderRadius: 8,
+                                        border: 'none',
+                                        backgroundColor: (auctionResult.status === 'completed' && !auctionResult.winning_bid) ? '#94A3B8' : '#1D4ED8',
+                                        color: '#FFFFFF',
+                                        fontSize: '14px',
+                                        fontWeight: 500,
+                                        cursor: (auctionResult.status === 'completed' && !auctionResult.winning_bid) ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    Submit Result
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

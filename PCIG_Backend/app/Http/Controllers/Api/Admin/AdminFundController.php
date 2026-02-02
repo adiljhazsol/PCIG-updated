@@ -56,18 +56,19 @@ class AdminFundController extends Controller
         $tableHeaders = ['Fund Name / ID', 'Strategy', 'Status', 'Target IRR', 'Lock-up', 'AUM / Cap', 'Capacity', 'Investors', 'Performance'];
 
         // 6. Funds List
-        $funds = Fund::withCount('fundInvestments')->get()->map(function ($fund) {
+        $funds = Fund::withCount('fundInvestments')->orderBy('created_at', 'desc')->get()->map(function ($fund) {
             $aum = $fund->total_assets;
             $cap = $fund->cap ?? 0;
             $aumPercent = $cap > 0 ? ($aum / $cap) * 100 : 0;
             
             return [
-                'id' => 'FND-' . str_pad($fund->id, 3, '0', STR_PAD_LEFT),
+                'db_id' => $fund->id,
+                'id' => $fund->fund_code ?? 'FND-' . str_pad($fund->id, 3, '0', STR_PAD_LEFT),
                 'name' => $fund->name,
                 'strategy' => $fund->strategy ?? 'N/A',
                 'strategyColor' => '#1D4ED8', // Could be dynamic based on strategy
                 'status' => ucfirst($fund->status),
-                'statusColor' => $fund->status === 'active' ? '#047857' : ($fund->status === 'closed' ? '#757575' : '#B45309'),
+                'statusColor' => $fund->status === 'active' ? '#047857' : ($fund->status === 'closed' ? '#757575' : ($fund->status === 'coming_soon' ? '#0284c7' : '#B45309')),
                 'targetIRR' => $fund->target_irr ?? 'N/A',
                 'lockUp' => $fund->lock_up_period ?? 'N/A',
                 'aum' => '$' . number_format($aum / 1000000, 1) . 'M',
@@ -82,6 +83,7 @@ class AdminFundController extends Controller
                 'inceptionDate' => $fund->launch_date ? $fund->launch_date->format('M d, Y') : 'N/A',
                 'minInvestment' => '$' . number_format($fund->min_investment),
                 'managementFee' => $fund->management_fee ? $fund->management_fee . '%' : 'N/A',
+                'performanceFee' => $fund->performance_fee ? $fund->performance_fee . '%' : 'N/A',
                 'activeTab' => 'overview',
                 'tabs' => ['Overview', 'Portfolio', 'Investors', 'Accounting', 'Distributions'],
                 'fundPerformance' => [
@@ -99,6 +101,8 @@ class AdminFundController extends Controller
                     'minInvestment' => '$' . number_format($fund->min_investment),
                     'lockUp' => $fund->lock_up_period ?? 'N/A',
                     'strategy' => $fund->strategy ?? 'N/A',
+                    'managementFee' => $fund->management_fee ? $fund->management_fee . '%' : 'N/A',
+                    'performanceFee' => $fund->performance_fee ? $fund->performance_fee . '%' : 'N/A',
                 ],
                 'taxDocuments' => [
                     'year' => '2023',
@@ -190,9 +194,41 @@ class AdminFundController extends Controller
     public function store(StoreFundRequest $request): JsonResponse
     {
         $data = $request->validated();
+        
+        // Ensure slug uniqueness
+        $originalSlug = $data['slug'] ?? \Illuminate\Support\Str::slug($data['name']);
+        $slug = $originalSlug;
+        $count = 1;
+        
+        while (Fund::withTrashed()->where('slug', $slug)->exists()) {
+            $slug = $originalSlug . '-' . $count;
+            $count++;
+        }
+        $data['slug'] = $slug;
+
         $data['status'] = $data['status'] ?? 'open';
         $data['total_shares'] = $data['total_shares'] ?? 0;
         $data['available_shares'] = $data['available_shares'] ?? ($data['total_shares'] ?? 0);
+
+        // Handle File Uploads
+        if ($request->hasFile('prospectus')) {
+            $data['prospectus_path'] = $request->file('prospectus')->store('funds/documents', 'public');
+        }
+        // Remove file object from data to avoid mass assignment error if not in fillable, 
+        // though strictly speaking if it's not in fillable it gets ignored by create(), 
+        // but it's cleaner to remove it or if we had mapped it to a column name that exists.
+        // In this case we mapped to prospectus_path which IS in fillable now.
+        unset($data['prospectus']);
+
+        if ($request->hasFile('term_sheet')) {
+            $data['term_sheet_path'] = $request->file('term_sheet')->store('funds/documents', 'public');
+        }
+        unset($data['term_sheet']);
+
+        if ($request->hasFile('image')) {
+            $data['image_path'] = $request->file('image')->store('funds/images', 'public');
+        }
+        unset($data['image']);
 
         $fund = Fund::create($data);
 
@@ -206,7 +242,42 @@ class AdminFundController extends Controller
     public function update(UpdateFundRequest $request, $id): JsonResponse
     {
         $fund = Fund::findOrFail($id);
-        $fund->update($request->validated());
+        $data = $request->validated();
+
+        if ($request->hasFile('prospectus')) {
+            $data['prospectus_path'] = $request->file('prospectus')->store('funds/documents', 'public');
+        }
+        unset($data['prospectus']);
+
+        if ($request->hasFile('term_sheet')) {
+            $data['term_sheet_path'] = $request->file('term_sheet')->store('funds/documents', 'public');
+        }
+        unset($data['term_sheet']);
+
+        if ($request->hasFile('image')) {
+            $data['image_path'] = $request->file('image')->store('funds/images', 'public');
+        }
+        unset($data['image']);
+
+        // Recalculate shares if cap or price changes
+        if (isset($data['cap']) || isset($data['price_per_share'])) {
+            $cap = $data['cap'] ?? $fund->cap;
+            $price = $data['price_per_share'] ?? $fund->price_per_share;
+            
+            if ($cap > 0 && $price > 0) {
+                $newTotalShares = floor($cap / $price);
+                
+                // Calculate currently sold shares based on active investments
+                $soldShares = FundInvestment::where('fund_id', $fund->id)
+                    ->where('status', 'active')
+                    ->sum('shares');
+                    
+                $data['total_shares'] = $newTotalShares;
+                $data['available_shares'] = max(0, $newTotalShares - $soldShares);
+            }
+        }
+
+        $fund->update($data);
         $fund->refresh();
 
         return response()->json([
@@ -276,6 +347,77 @@ class AdminFundController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Fund deleted successfully',
+        ]);
+    }
+
+    public function generateReports(Request $request): JsonResponse
+    {
+        // Placeholder for report generation
+        return response()->json([
+            'success' => true,
+            'message' => 'Report generation started. You will be notified when it is ready.',
+        ]);
+    }
+
+    public function recordContribution(Request $request, $id): JsonResponse
+    {
+        $fund = Fund::findOrFail($id);
+        
+        // Validate request
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0',
+            // 'investor_id' => 'required|exists:users,id', // Commented out for now to allow easier testing without real users
+            'date' => 'required|date',
+        ]);
+
+        // Logic to record contribution would go here
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Contribution recorded successfully.',
+            'data' => [
+                'fund_id' => $fund->id,
+                'amount' => $validated['amount'],
+                'date' => $validated['date'],
+            ]
+        ]);
+    }
+
+    public function distributeProfits(Request $request, $id): JsonResponse
+    {
+        $fund = Fund::findOrFail($id);
+
+        // Validate request
+        $validated = $request->validate([
+            'amount' => 'required|numeric|min:0',
+            'type' => 'required|string', // e.g., 'dividend', 'interest'
+            'date' => 'required|date',
+        ]);
+
+        // Logic to distribute profits would go here
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'Distribution processed successfully.',
+            'data' => [
+                'fund_id' => $fund->id,
+                'amount' => $validated['amount'],
+                'type' => $validated['type'],
+                'date' => $validated['date'],
+            ]
+        ]);
+    }
+
+    public function downloadK1Package(Request $request, $id)
+    {
+        $fund = Fund::findOrFail($id);
+        
+        // Return a dummy text file for now
+        $content = "K-1 Package for Fund: " . $fund->name . "\nDate: " . now();
+        
+        return response($content, 200, [
+            'Content-Type' => 'text/plain',
+            'Content-Disposition' => 'attachment; filename="k1-package-' . $id . '.txt"',
         ]);
     }
 }

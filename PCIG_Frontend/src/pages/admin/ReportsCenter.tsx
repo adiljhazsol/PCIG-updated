@@ -1,4 +1,5 @@
 import { CSSProperties, useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Search,
   FileText,
@@ -9,7 +10,10 @@ import {
   ClipboardList,
   Percent,
   Book,
-  Plus
+  Plus,
+  Trash2,
+  Star,
+  X
 } from 'lucide-react';
 import AdminNav from '../../components/admin/AdminNav';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
@@ -28,6 +32,7 @@ const iconMap: { [key: string]: any } = {
 };
 
 export default function ReportsCenter() {
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
   const isTablet = useIsTablet();
   const isMobileOrTablet = isMobile || isTablet;
@@ -58,6 +63,7 @@ export default function ReportsCenter() {
 
   // Safe data extraction
   const reportsData = data || {};
+  const [activeTab, setActiveTab] = useState<string>(reportsData.activeTab || 'all');
   const header = reportsData.header || { title: 'Reports Center', subtitle: 'Access financial and operational reports' };
   const searchPlaceholder = reportsData.searchPlaceholder || 'Search reports...';
   const taxSeasonBanner = reportsData.taxSeasonBanner || { 
@@ -69,10 +75,18 @@ export default function ReportsCenter() {
     } 
   };
   const tabs = reportsData.tabs || ['All Reports', 'Financial', 'Operational', 'Tax'];
-  const reportCategories = reportsData.reportCategories || [];
-  const sidebar = reportsData.sidebar || { recentReports: [], scheduledReports: [], favorites: [] };
+  const allCategories = reportsData.reportCategories || [];
+  
+  const reportCategories = activeTab === 'All Reports' || activeTab === 'all' 
+    ? allCategories 
+    : allCategories.filter((cat: any) => {
+        if (activeTab === 'Financial') return cat.title === 'Financial Reports';
+        if (activeTab === 'Operational') return cat.title === 'Operational Reports';
+        if (activeTab === 'Tax') return cat.title === 'Tax & Compliance';
+        return true;
+      });
 
-  const [activeTab, setActiveTab] = useState<string>(reportsData.activeTab || 'all');
+  const sidebar = reportsData.sidebar || { recentReports: [], scheduledReports: [], favorites: [] };
 
   const pageWrapperStyle: CSSProperties = {
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -86,6 +100,118 @@ export default function ReportsCenter() {
 
   const ReviewAllocationsIcon = iconMap[taxSeasonBanner.buttons?.reviewAllocations?.icon] || Settings;
   const GenerateK1Icon = iconMap[taxSeasonBanner.buttons?.generateK1?.icon] || FileText;
+
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  
+  interface ScheduleForm {
+    type: string;
+    frequency: string;
+    recipients: string;
+    parameters: {
+      startDate: string;
+      endDate: string;
+      propertyId: string;
+    };
+  }
+
+  const [scheduleForm, setScheduleForm] = useState<ScheduleForm>({
+    type: '',
+    frequency: 'weekly',
+    recipients: '',
+    parameters: {
+      startDate: '',
+      endDate: '',
+      propertyId: ''
+    }
+  });
+
+  const handleToggleFavorite = async (reportId: string) => {
+    try {
+      const response = await api.post('/admin/reports/favorite', { report_type: reportId });
+      if (response.data.success) {
+        // Refresh data to update sidebar and icons
+        const newData = await api.get('/admin/reports/dashboard-data');
+        if (newData.data && newData.data.data && newData.data.data.reportsCenter) {
+          setData(newData.data.data.reportsCenter);
+        }
+      }
+    } catch (err) {
+      console.error('Error toggling favorite:', err);
+    }
+  };
+
+  const handleDeleteScheduled = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this scheduled report?')) return;
+    
+    try {
+      await api.delete(`/admin/reports/schedule/${id}`);
+      // Refresh data
+      const newData = await api.get('/admin/reports/dashboard-data');
+      if (newData.data && newData.data.data && newData.data.data.reportsCenter) {
+        setData(newData.data.data.reportsCenter);
+      }
+    } catch (err) {
+      console.error('Error deleting scheduled report:', err);
+    }
+  };
+
+  const handleScheduleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/admin/reports/schedule', scheduleForm);
+      setShowScheduleModal(false);
+      setScheduleForm({
+        type: '',
+        frequency: 'weekly',
+        recipients: '',
+        parameters: {
+          startDate: '',
+          endDate: '',
+          propertyId: ''
+        }
+      });
+      // Refresh data
+      const newData = await api.get('/admin/reports/dashboard-data');
+      if (newData.data && newData.data.data && newData.data.data.reportsCenter) {
+        setData(newData.data.data.reportsCenter);
+      }
+    } catch (err) {
+      console.error('Error scheduling report:', err);
+    }
+  };
+
+  const handleGenerateReport = async (reportId: string) => {
+    try {
+      // Show loading indicator if desired (optional)
+      const response = await api.post('/admin/reports/generate', { type: reportId });
+      
+      if (response.data.success && response.data.data.id) {
+        const reportId = response.data.data.id;
+        
+        // Download the generated report
+        const downloadRes = await api.get(`/admin/reports/download/${reportId}`, { 
+          responseType: 'blob' 
+        });
+        
+        // Create download link
+        const url = window.URL.createObjectURL(new Blob([downloadRes.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        // Use the filename from the response or generate one
+        const filename = `${reportId}_${new Date().toISOString().split('T')[0]}.csv`;
+        link.setAttribute('download', filename);
+        document.body.appendChild(link);
+        link.click();
+        
+        // Cleanup
+        link.remove();
+        window.URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error('Error generating report:', err);
+      // Ideally show a toast notification here
+    }
+  };
 
   if (loading) {
     return (
@@ -245,6 +371,7 @@ export default function ReportsCenter() {
             </div>
             <div style={{ display: 'flex', gap: 12, flexWrap: isMobile ? 'wrap' : 'nowrap', width: isMobile ? '100%' : 'auto', marginTop: isMobile ? 8 : 0, minWidth: 0 }}>
               <button
+                onClick={() => navigate('/admin/payments/depreciation-tax-allocation')}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -268,6 +395,7 @@ export default function ReportsCenter() {
                 <span style={{ wordBreak: 'break-word' }}>{taxSeasonBanner?.buttons?.reviewAllocations?.label || 'Review Allocations'}</span>
               </button>
               <button
+                onClick={() => navigate('/admin/payments/k1-generation')}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -384,9 +512,32 @@ export default function ReportsCenter() {
                           flexDirection: 'column',
                           minWidth: 0,
                           width: '100%',
-                          boxSizing: 'border-box'
+                          boxSizing: 'border-box',
+                          position: 'relative'
                         }}
                       >
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleToggleFavorite(report.id);
+                          }}
+                          style={{
+                            position: 'absolute',
+                            top: isMobile ? 16 : 20,
+                            right: isMobile ? 16 : 20,
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: 4,
+                            zIndex: 2
+                          }}
+                        >
+                          <Star
+                            size={20}
+                            fill={report.is_favorite ? "#F59E0B" : "none"}
+                            color={report.is_favorite ? "#F59E0B" : "#94A3B8"}
+                          />
+                        </button>
                         <div
                           style={{
                             width: `clamp(36px, 4.5vw, 40px)`,
@@ -452,6 +603,7 @@ export default function ReportsCenter() {
                           </ul>
                         </div>
                         <button
+                          onClick={() => handleGenerateReport(report.id)}
                           style={{
                             width: '100%',
                             padding: `clamp(10px, 1.2vh, 12px) clamp(14px, 2vw, 16px)`,
@@ -594,12 +746,25 @@ export default function ReportsCenter() {
                           color: '#64748B'
                         }}
                       >
-                        Next run: {report.nextRun}
+                        {report.frequency} • Next: {report.next_run}
                       </div>
                     </div>
+                    <button
+                      onClick={() => handleDeleteScheduled(report.id)}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        cursor: 'pointer',
+                        padding: 4,
+                        color: '#EF4444'
+                      }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
                   </div>
                 ))}
                 <button
+                  onClick={() => setShowScheduleModal(true)}
                   style={{
                     width: '100%',
                     padding: `clamp(10px, 1.2vh, 12px) clamp(14px, 2vw, 16px)`,
@@ -648,9 +813,10 @@ export default function ReportsCenter() {
                 Favorites
               </h3>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: isMobile ? 6 : 8, width: '100%', minWidth: 0 }}>
-                {sidebar.favorites.map((favorite: string, idx: number) => (
+                {sidebar.favorites.map((favorite: any, idx: number) => (
                   <button
                     key={idx}
+                    onClick={() => handleGenerateReport(favorite.id)}
                     style={{
                       padding: `clamp(6px, 0.8vh, 8px) clamp(10px, 1.5vw, 12px)`,
                       fontSize: `clamp(12px, 1.6vw, 13px)`,
@@ -660,13 +826,13 @@ export default function ReportsCenter() {
                       border: '1px solid #E2E8F0',
                       borderRadius: 6,
                       cursor: 'pointer',
-                      boxSizing: 'border-box',
-                      minWidth: 0,
-                      wordBreak: 'break-word',
-                      whiteSpace: 'normal'
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 6
                     }}
                   >
-                    {favorite}
+                    <Star size={14} fill="#F59E0B" color="#F59E0B" />
+                    {favorite.title}
                   </button>
                 ))}
               </div>
@@ -674,6 +840,195 @@ export default function ReportsCenter() {
           </div>
         </div>
       </div>
+
+      {/* Schedule Report Modal */}
+      {showScheduleModal && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            zIndex: 1000,
+            padding: 20
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: '#FFFFFF',
+              borderRadius: 12,
+              padding: 24,
+              width: '100%',
+              maxWidth: 400,
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h3 style={{ margin: 0, fontSize: 18, fontWeight: 600 }}>Schedule Report</h3>
+              <button
+                onClick={() => setShowScheduleModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 4 }}
+              >
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleScheduleSubmit}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500 }}>Report Type</label>
+                <select
+                  value={scheduleForm.type}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, type: e.target.value })}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: 10,
+                    borderRadius: 8,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14
+                  }}
+                >
+                  <option value="">Select a report...</option>
+                  <option value="financial_summary">Financial Summary</option>
+                  <option value="investor_activity">Investor Activity</option>
+                  <option value="property_performance">Property Performance</option>
+                  <option value="workflow_efficiency">Workflow Efficiency</option>
+                  <option value="tax_report">Annual Tax Report</option>
+                </select>
+              </div>
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500 }}>Frequency</label>
+                <select
+                  value={scheduleForm.frequency}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, frequency: e.target.value })}
+                  required
+                  style={{
+                    width: '100%',
+                    padding: 10,
+                    borderRadius: 8,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14
+                  }}
+                >
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500 }}>Recipients (comma separated emails)</label>
+                <input
+                  type="text"
+                  value={scheduleForm.recipients}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, recipients: e.target.value })}
+                  placeholder="email1@example.com, email2@example.com"
+                  style={{
+                    width: '100%',
+                    padding: 10,
+                    borderRadius: 8,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500 }}>Date Range (Optional)</label>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <input
+                    type="date"
+                    value={scheduleForm.parameters.startDate}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, parameters: { ...scheduleForm.parameters, startDate: e.target.value } })}
+                    style={{
+                      flex: 1,
+                      padding: 10,
+                      borderRadius: 8,
+                      border: '1px solid #E2E8F0',
+                      fontSize: 14,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                  <input
+                    type="date"
+                    value={scheduleForm.parameters.endDate}
+                    onChange={(e) => setScheduleForm({ ...scheduleForm, parameters: { ...scheduleForm.parameters, endDate: e.target.value } })}
+                    style={{
+                      flex: 1,
+                      padding: 10,
+                      borderRadius: 8,
+                      border: '1px solid #E2E8F0',
+                      fontSize: 14,
+                      boxSizing: 'border-box'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500 }}>Property (Optional)</label>
+                <select
+                  value={scheduleForm.parameters.propertyId}
+                  onChange={(e) => setScheduleForm({ ...scheduleForm, parameters: { ...scheduleForm.parameters, propertyId: e.target.value } })}
+                  style={{
+                    width: '100%',
+                    padding: 10,
+                    borderRadius: 8,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <option value="">Select a property...</option>
+                  {reportsData.properties?.map((prop: any) => (
+                    <option key={prop.id} value={prop.id}>
+                      {prop.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'flex', gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: 10,
+                    borderRadius: 8,
+                    border: '1px solid #E2E8F0',
+                    backgroundColor: '#FFFFFF',
+                    color: '#64748B',
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{
+                    flex: 1,
+                    padding: 10,
+                    borderRadius: 8,
+                    border: 'none',
+                    backgroundColor: '#1E3A5F',
+                    color: '#FFFFFF',
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Schedule
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

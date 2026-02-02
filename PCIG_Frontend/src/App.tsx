@@ -24,10 +24,13 @@ import InvestorFundDetail from './pages/investor/InvestorFundDetail';
 import AdminDashboard from './pages/admin/Dashboard';
 import PropertiesWorkflowHub from './pages/admin/PropertiesWorkflow';
 import InvestorsManagement from './pages/admin/InvestorsManagement';
+import AdminInvestorDetail from './pages/admin/AdminInvestorDetail';
 import REODisposition from './pages/admin/REODisposition';
 import Payments from './pages/admin/Payments';
 import AssetTransactions from './pages/admin/AssetTransactions';
 import FundAdmin from './pages/admin/FundAdmin';
+import ShareAdmin from './pages/admin/ShareAdmin';
+import CreateShareListingAdmin from './pages/admin/CreateShareListingAdmin';
 import CreateFund from './pages/admin/CreateFund';
 import AddProperty from './pages/admin/AddProperty';
 import REOLeased from './pages/admin/REOLeased';
@@ -58,6 +61,7 @@ import FIFAProcessing from './pages/admin/FIFAProcessing';
 import SheriffWorkflow from './pages/admin/SheriffWorkflow';
 import RedemptionTracking from './pages/admin/RedemptionTracking';
 import Barment from './pages/admin/Barment';
+import BarmentDetail from './pages/admin/BarmentDetail';
 import QuietTitle from './pages/admin/QuietTitle';
 import Auction from './pages/admin/Auction';
 import DepreciationTaxAllocation from './pages/admin/DepreciationTaxAllocation';
@@ -111,6 +115,7 @@ function App() {
         <Route path="/admin/properties/workflow-hub" element={<PropertiesWorkflowHub />} />
         <Route path="/admin/investors" element={<InvestorsManagement />} />
         <Route path="/admin/investors/management" element={<InvestorsManagement />} />
+        <Route path="/admin/investors/:id" element={<AdminInvestorDetail />} />
         <Route path="/admin/properties/reo-disposition" element={<REODisposition />} />
         <Route path="/admin/properties/fifa-import" element={<FIFAImport />} />
         <Route path="/admin/properties/fifa-import/batches" element={<FIFABatchList />} />
@@ -120,6 +125,7 @@ function App() {
         <Route path="/admin/properties/sheriff-workflow" element={<SheriffWorkflow />} />
         <Route path="/admin/properties/redemption-tracking" element={<RedemptionTracking />} />
         <Route path="/admin/properties/barment" element={<Barment />} />
+        <Route path="/admin/properties/barment/:id" element={<BarmentDetail />} />
         <Route path="/admin/properties/quiet-title" element={<QuietTitle />} />
         <Route path="/admin/properties/auction" element={<Auction />} />
         <Route path="/admin/properties/parcel-research" element={<ParcelResearch />} />
@@ -133,6 +139,9 @@ function App() {
         <Route path="/admin/asset-transactions" element={<AssetTransactions />} />
         <Route path="/admin/asset-transactions/create" element={<CreateTransaction />} />
         <Route path="/admin/investors/fund-admin" element={<FundAdmin />} />
+        <Route path="/admin/operations/shares" element={<ShareAdmin />} />
+        <Route path="/admin/operations/shares/create" element={<CreateShareListingAdmin />} />
+        <Route path="/admin/funds" element={<FundAdmin />} />
         <Route path="/admin/funds/create" element={<CreateFund />} />
         <Route path="/admin/properties/add" element={<AddProperty />} />
         <Route path="/admin/invite-investor" element={<InviteInvestor />} />

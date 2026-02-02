@@ -1,0 +1,118 @@
+# PCIG Project Activation & Testing Guide
+
+This guide is designed to take the AI-generated PCIG project from its current state to a fully functional, production-ready application. It addresses common pitfalls in AI-generated code (missing links, hardcoded values, data integrity) and provides a "Smoke Test" strategy for every module.
+
+## 1. Project Architecture
+- **Root**: `c:\xampp\htdocs\PCIG`
+- **Backend**: `PCIG_Backend` (Laravel 11 + Sanctum + MySQL)
+- **Frontend**: `PCIG_Frontend` (React + TypeScript + Vite)
+
+---
+
+## 2. Environment & Foundation Setup
+*Goal: Ensure the engines are running and talking to each other.*
+
+### 2.1 Backend (The Brain)
+1. **Navigate**: `cd c:\xampp\htdocs\PCIG\PCIG_Backend`
+2. **Dependencies**: Run `composer install` to load PHP libraries.
+3. **Configuration**:
+   - Ensure `.env` exists. If not, copy `.env.example`.
+   - Verify Database connection:
+     ```ini
+     DB_CONNECTION=mysql
+     DB_HOST=127.0.0.1
+     DB_PORT=3306
+     DB_DATABASE=pcig_database
+     DB_USERNAME=root
+     DB_PASSWORD=
+     ```
+4. **Encryption**: Run `php artisan key:generate`.
+5. **Database**:
+   - Create `pcig_database` in phpMyAdmin.
+   - Run `php artisan migrate:fresh --seed`.
+   - **Critical**: This step creates the tables AND inserts the default Admin user.
+   - *Default Admin*: `admin@pcig.com` / `password` (Check `database/seeders/UserSeeder.php` if this fails).
+
+### 2.2 Frontend (The Face)
+1. **Navigate**: `cd c:\xampp\htdocs\PCIG\PCIG_Frontend`
+2. **Dependencies**: Run `npm install`.
+3. **API Configuration**:
+   - **Check**: Open `src/services/api.ts`.
+   - **Verify**: Ensure `baseURL` matches your running backend (usually `http://127.0.0.1:8000/api`).
+   - *Optimization*: Ideally, replace the hardcoded string with `import.meta.env.VITE_API_URL` and set it in a `.env` file.
+
+### 2.3 Launch
+1. **Terminal 1 (Backend)**: `php artisan serve` (Keeps backend alive at port 8000).
+2. **Terminal 2 (Frontend)**: `npm run dev` (Keeps frontend alive at port 5173).
+
+---
+
+## 3. The "Smoke Test" Strategy
+*Since this is AI-generated code, don't trust the UI until you verify the Data Flow. Use `php artisan tinker` to bypass the UI and check the plumbing directly.*
+
+### Module 1: Authentication
+1. **Test**: Go to `http://localhost:5173/login`.
+2. **Action**: Login with `admin@pcig.com` / `password`.
+3. **Verify**:
+   - Success: Redirects to `/admin/dashboard`.
+   - Failure: Open DevTools (F12) -> Network. Look for red 401/500 errors.
+   - *Fix*: If 401, check `UserSeeder.php`. If 500, check `storage/logs/laravel.log`.
+
+### Module 2: Properties (The Core Asset)
+1. **Smell Test**: Dashboard should show stats. If "0", inject data.
+2. **Tinker Injection**:
+   ```php
+   // Run in Backend Terminal: php artisan tinker
+   \App\Models\Property::create([
+       'address' => '123 Test St',
+       'city' => 'Test City',
+       'state' => 'TX',
+       'zip' => '12345',
+       'status' => 'active',
+       'workflow_stage' => 'acquisition' // Critical for dashboards!
+   ]);
+   ```
+3. **Verify**: Refresh Admin Dashboard. The "Properties" count should increment.
+
+### Module 3: Redemption Tracking (Verified)
+*We verified this module specifically.*
+1. **Issue**: "Active Redemptions" might be 0 even if you have a tracking record.
+2. **Why**: The system filters by `workflow_stage = 'redemption'` on the Property, NOT just the existence of a tracking record.
+3. **Correct Test Data**:
+   ```php
+   $prop = \App\Models\Property::create([...]); // Create property
+   $prop->update(['workflow_stage' => 'redemption']); // Set correct stage
+   \App\Models\RedemptionTracking::create([
+       'property_id' => $prop->id,
+       'status' => 'pending',
+       'redemption_deadline' => now()->addDays(15)
+   ]);
+   ```
+4. **Verify**: Check "Redemption Queue" on the frontend. It should now show the row.
+
+### Module 4: Funds & Investments
+1. **Tinker Injection**:
+   ```php
+   \App\Models\Fund::create([
+       'name' => 'Test Fund Alpha',
+       'target_amount' => 1000000,
+       'min_investment' => 5000,
+       'status' => 'open'
+   ]);
+   ```
+2. **Verify**: Go to Funds page. Ensure "Test Fund Alpha" appears.
+
+---
+
+## 4. Troubleshooting & Optimization
+- **"Undefined Variable" Errors**: Common in AI code.
+  - *Fix*: Check the Controller method. Ensure every variable passed to `response()->json(...)` is actually defined above.
+- **"Queue is Empty" / "Stats are 0"**:
+  - *Fix*: Check the `where` clauses in the Controller (e.g., `where('status', 'active')`). Ensure your database data matches EXACTLY (case-sensitive).
+- **Hardcoded URLs**:
+  - *Fix*: Search globally (Ctrl+Shift+F) for `http://localhost` and replace with dynamic config variables.
+
+## 5. Next Steps
+1. **Run Migrations**: Ensure all tables exist (`php artisan migrate`).
+2. **Seed Data**: Use `php artisan db:seed` to populate a baseline.
+3. **Walkthrough**: Click every menu item. If a page crashes (White Screen), check the Console (F12) for JS errors or Network tab for API errors.

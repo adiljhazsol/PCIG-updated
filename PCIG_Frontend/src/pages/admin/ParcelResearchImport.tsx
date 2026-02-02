@@ -62,11 +62,7 @@ export default function ParcelResearchImport() {
         formData.append(`files[${index}]`, file);
       });
       
-      await api.post('/admin/parcel/import', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
+      await api.post('/admin/parcel/import', formData);
       
       navigate('/admin/properties/parcel-research');
     } catch (err) {

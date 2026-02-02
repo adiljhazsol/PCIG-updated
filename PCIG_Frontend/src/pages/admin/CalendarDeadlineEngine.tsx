@@ -33,8 +33,10 @@ export default function CalendarDeadlineEngine() {
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [currentDate, setCurrentDate] = useState(new Date());
 
-  const [selectedView, setSelectedView] = useState<string>('Calendar');
+  const [selectedView, setSelectedView] = useState<string>('Month');
   const [selectedWorkflow, setSelectedWorkflow] = useState<string>('All Workflows');
+  const [selectedDeadlineType, setSelectedDeadlineType] = useState<string>('All Types');
+  const [selectedCounty, setSelectedCounty] = useState<string>('All Counties');
 
   // Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -60,13 +62,20 @@ export default function CalendarDeadlineEngine() {
 
   useEffect(() => {
     fetchDashboardData();
-  }, [currentDate]);
+  }, [currentDate, selectedWorkflow, selectedDeadlineType, selectedCounty]);
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
       const dateStr = currentDate.toISOString().split('T')[0];
-      const response = await api.get(`/admin/deadlines/dashboard-data?date=${dateStr}`);
+      const queryParams = new URLSearchParams({
+        date: dateStr,
+        workflow: selectedWorkflow,
+        type: selectedDeadlineType,
+        county: selectedCounty
+      });
+      
+      const response = await api.get(`/admin/deadlines/dashboard-data?${queryParams.toString()}`);
       if (response.data.success) {
         setDashboardData(response.data);
       } else {
@@ -77,6 +86,33 @@ export default function CalendarDeadlineEngine() {
       setError('Error loading dashboard data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleExport = async () => {
+    try {
+      const dateStr = currentDate.toISOString().split('T')[0];
+      const queryParams = new URLSearchParams({
+        date: dateStr,
+        workflow: selectedWorkflow,
+        type: selectedDeadlineType,
+        county: selectedCounty
+      });
+      
+      const response = await api.get(`/admin/deadlines/export?${queryParams.toString()}`, {
+        responseType: 'blob'
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `deadlines_export_${dateStr}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      console.error('Error exporting deadlines:', err);
+      alert('Failed to export deadlines');
     }
   };
 
@@ -104,9 +140,10 @@ export default function CalendarDeadlineEngine() {
       await api.put(`/admin/deadlines/${selectedDeadline.id}`, editForm);
       setIsEditModalOpen(false);
       fetchDashboardData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating deadline:', err);
-      alert('Failed to update deadline');
+      const message = err.response?.data?.message || 'Failed to update deadline';
+      alert(message);
     } finally {
       setLoading(false);
     }
@@ -119,9 +156,10 @@ export default function CalendarDeadlineEngine() {
       await api.put(`/admin/deadlines/${selectedDeadline.id}`, { status });
       setIsEditModalOpen(false);
       fetchDashboardData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error updating deadline:', err);
-      alert('Failed to update deadline');
+      const message = err.response?.data?.message || 'Failed to update deadline';
+      alert(message);
     } finally {
       setLoading(false);
     }
@@ -134,28 +172,45 @@ export default function CalendarDeadlineEngine() {
       await api.delete(`/admin/deadlines/${selectedDeadline.id}`);
       setIsEditModalOpen(false);
       fetchDashboardData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error deleting deadline:', err);
-      alert('Failed to delete deadline');
+      const message = err.response?.data?.message || 'Failed to delete deadline';
+      alert(message);
     } finally {
       setLoading(false);
     }
   };
 
-  const handlePrevMonth = () => {
-    setCurrentDate(prev => {
-      const newDate = new Date(prev);
-      newDate.setMonth(prev.getMonth() - 1);
-      return newDate;
-    });
+  const handlePrev = () => {
+    if (selectedView === 'Week') {
+      setCurrentDate(prev => {
+        const newDate = new Date(prev);
+        newDate.setDate(prev.getDate() - 7);
+        return newDate;
+      });
+    } else {
+      setCurrentDate(prev => {
+        const newDate = new Date(prev);
+        newDate.setMonth(prev.getMonth() - 1);
+        return newDate;
+      });
+    }
   };
 
-  const handleNextMonth = () => {
-    setCurrentDate(prev => {
-      const newDate = new Date(prev);
-      newDate.setMonth(prev.getMonth() + 1);
-      return newDate;
-    });
+  const handleNext = () => {
+    if (selectedView === 'Week') {
+      setCurrentDate(prev => {
+        const newDate = new Date(prev);
+        newDate.setDate(prev.getDate() + 7);
+        return newDate;
+      });
+    } else {
+      setCurrentDate(prev => {
+        const newDate = new Date(prev);
+        newDate.setMonth(prev.getMonth() + 1);
+        return newDate;
+      });
+    }
   };
 
   const handleSaveDeadline = async () => {
@@ -173,9 +228,10 @@ export default function CalendarDeadlineEngine() {
       setIsAddModalOpen(false);
       setNewDeadline({ type: 'filing', deadline_date: new Date().toISOString().split('T')[0], description: '' });
       fetchDashboardData();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error creating deadline:', err);
-      alert('Failed to create deadline');
+      const message = err.response?.data?.message || 'Failed to create deadline';
+      alert(message);
     } finally {
       setLoading(false);
     }
@@ -191,22 +247,23 @@ export default function CalendarDeadlineEngine() {
   };
 
   const actionButtons = staticData?.actionButtons || {
-    export: { label: 'Export', icon: 'Download' },
-    addManual: { label: 'Add Manual', icon: 'Plus' }
+    export: { label: 'Export Deadlines', icon: 'Download' },
+    addManual: { label: 'Add Manual Deadline', icon: 'Plus' }
   };
 
-  const leftSidebar = staticData?.leftSidebar || {
-    views: { label: 'Views', options: ['Calendar', 'List', 'Timeline'], selected: 'Calendar' },
-    workflows: { label: 'Workflows', options: ['All Workflows', 'Tax Sale', 'Foreclosure'], selected: 'All Workflows' },
-    deadlineType: { label: 'Deadline Type', value: 'All Types' },
+  const leftSidebar = {
+    views: { label: 'Views', options: ['Month', 'Week', 'List'], selected: selectedView },
+    workflows: { label: 'Workflows', options: ['All Workflows', 'Tax Sale', 'Foreclosure', 'Quiet Title', 'Sheriff', 'Auction', 'Redemption', 'Barment'], selected: selectedWorkflow },
+    deadlineType: { label: 'Deadline Type', value: selectedDeadlineType, options: ['All Types', ...(dashboardData?.filters?.types || [])] },
     dateRange: { label: 'Date Range', value: currentDate.toLocaleString('default', { month: 'short', year: 'numeric' }) },
-    county: { label: 'County', value: 'All Counties' },
+    county: { label: 'County', value: selectedCounty, options: ['All Counties', ...(dashboardData?.filters?.counties || [])] },
     legend: { 
       label: 'Legend', 
       items: [
-        { label: 'Completed', color: '#10B981' },
-        { label: 'Pending', color: '#F59E0B' },
-        { label: 'Overdue', color: '#EF4444' }
+        { label: '< 7 days (Critical)', color: '#EF4444' },
+        { label: '7-14 days (Warning)', color: '#F59E0B' },
+        { label: '> 14 days (Normal)', color: '#3B82F6' },
+        { label: 'Completed', color: '#10B981' }
       ] 
     },
     upcomingDeadlines: []
@@ -216,77 +273,139 @@ export default function CalendarDeadlineEngine() {
   const summaryCards = dashboardData?.summaryCards || [];
   const upcomingDeadlines = dashboardData?.upcomingDeadlines || [];
 
-  // Create a map of deadlines by date for quick lookup
-  const deadlinesByDate = new Map<number, any[]>();
+  // Create a map of deadlines by date for quick lookup (YYYY-MM-DD)
+  const deadlinesByDate = new Map<string, any[]>();
   
   if (dashboardData?.calendarEvents) {
     dashboardData.calendarEvents.forEach((event: any) => {
       const dateStr = event.deadline_date.split('T')[0];
-      const [y, m, d] = dateStr.split('-').map(Number);
       
-      if (y === currentDate.getFullYear() && m - 1 === currentDate.getMonth()) {
-        const existing = deadlinesByDate.get(d) || [];
-        
-        // Determine colors based on status and date
-        let bg = '#FFFBEB';
-        let color = '#F59E0B';
-        const eventDate = new Date(event.deadline_date);
-        const now = new Date();
-        
-        if (event.status === 'completed') {
-           bg = '#ECFDF5';
-           color = '#10B981';
-        } else if (eventDate < now && eventDate.getDate() !== now.getDate()) { // Overdue if strictly past
+      const eventDate = new Date(event.deadline_date);
+      const now = new Date();
+      
+      // Determine colors based on status and date
+      let bg = '#EFF6FF'; // Normal bg (Blue)
+      let color = '#3B82F6'; // Normal text (Blue)
+      
+      const diffTime = eventDate.getTime() - now.getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+      if (event.status === 'completed') {
+         bg = '#ECFDF5';
+         color = '#10B981';
+      } else {
+         if (diffDays < 7) {
+           // Critical
            bg = '#FEF2F2';
            color = '#EF4444';
-        }
-
-        existing.push({
-          id: event.id,
-          title: event.property ? `${event.property.address} - ${event.task_name}` : event.task_name,
-          type: event.task_name || 'Deadline', // Displayed text in calendar cell
-          status: event.status,
-          bg,
-          color,
-          time: 'Due Day'
-        });
-        deadlinesByDate.set(d, existing);
+         } else if (diffDays <= 14) {
+           // Warning
+           bg = '#FFFBEB';
+           color = '#F59E0B';
+         }
       }
+
+      // Add to map by date string
+      const existing = deadlinesByDate.get(dateStr) || [];
+      existing.push({
+        id: event.id,
+        title: event.property ? `${event.property.address} - ${event.task_name}` : event.task_name,
+        type: event.task_name || 'Deadline',
+        status: event.status,
+        bg,
+        color,
+        time: 'Due Day'
+      });
+      deadlinesByDate.set(dateStr, existing);
     });
   }
 
-  // Generate calendar grid dynamically based on currentDate
-  const year = currentDate.getFullYear();
-  const month = currentDate.getMonth(); 
+  // Generate calendar grid
+  let weeks: Array<Array<{ date: number | null; isCurrentMonth: boolean; deadlines: any[] }>> = [];
   
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  const firstDayOfMonth = new Date(year, month, 1).getDay(); 
-  
-  const weeks: Array<Array<{ date: number | null; isCurrentMonth: boolean; deadlines: any[] }>> = [];
-  let currentWeek: Array<{ date: number | null; isCurrentMonth: boolean; deadlines: any[] }> = [];
-  
-  for (let i = 0; i < firstDayOfMonth; i++) {
-    currentWeek.push({ date: null, isCurrentMonth: false, deadlines: [] });
-  }
-  
-  for (let i = 1; i <= daysInMonth; i++) {
-    currentWeek.push({
-      date: i,
-      isCurrentMonth: true,
-      deadlines: deadlinesByDate.get(i) || []
-    });
-    
-    if (currentWeek.length === 7) {
+  if (selectedView === 'Month') {
+          const year = currentDate.getFullYear();
+          const month = currentDate.getMonth(); 
+          
+          const daysInMonth = new Date(year, month + 1, 0).getDate();
+          const firstDayOfMonth = new Date(year, month, 1).getDay(); 
+          const prevMonthLastDay = new Date(year, month, 0).getDate();
+          
+          let currentWeek: Array<{ date: number | null; isCurrentMonth: boolean; deadlines: any[] }> = [];
+          
+          // Fill previous month days
+          for (let i = 0; i < firstDayOfMonth; i++) {
+            const dayNum = prevMonthLastDay - firstDayOfMonth + 1 + i;
+            const prevDate = new Date(year, month - 1, dayNum);
+            const dateKey = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+            
+            currentWeek.push({ 
+              date: dayNum, 
+              isCurrentMonth: false, 
+              deadlines: deadlinesByDate.get(dateKey) || [] 
+            });
+          }
+          
+          // Fill current month days
+          for (let i = 1; i <= daysInMonth; i++) {
+            const dateKey = `${year}-${String(month + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+            currentWeek.push({
+              date: i,
+              isCurrentMonth: true,
+              deadlines: deadlinesByDate.get(dateKey) || []
+            });
+            
+            if (currentWeek.length === 7) {
+              weeks.push(currentWeek);
+              currentWeek = [];
+            }
+          }
+          
+          // Fill next month days
+          let nextMonthDay = 1;
+          while (currentWeek.length < 7 && currentWeek.length > 0) {
+            const nextDate = new Date(year, month + 1, nextMonthDay);
+            const dateKey = `${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextMonthDay).padStart(2, '0')}`;
+            
+            currentWeek.push({ 
+              date: nextMonthDay, 
+              isCurrentMonth: false, 
+              deadlines: deadlinesByDate.get(dateKey) || [] 
+            });
+            nextMonthDay++;
+          }
+          if (currentWeek.length > 0) {
+            weeks.push(currentWeek);
+          }
+      } else if (selectedView === 'Week') {
+      // Generate just the current week
+      const startOfWeek = new Date(currentDate);
+      startOfWeek.setDate(currentDate.getDate() - currentDate.getDay()); // Go to Sunday
+      
+      const currentWeek: Array<{ date: number | null; isCurrentMonth: boolean; deadlines: any[] }> = [];
+      
+      for (let i = 0; i < 7; i++) {
+          const d = new Date(startOfWeek);
+          d.setDate(startOfWeek.getDate() + i);
+          
+          const dateKey = d.toISOString().split('T')[0];
+          const isCurrentMonth = d.getMonth() === currentDate.getMonth();
+          const dayNum = d.getDate();
+          
+          currentWeek.push({
+              date: dayNum,
+              isCurrentMonth: isCurrentMonth,
+              deadlines: deadlinesByDate.get(dateKey) || []
+          });
+      }
       weeks.push(currentWeek);
-      currentWeek = [];
-    }
-  }
-  
-  while (currentWeek.length < 7 && currentWeek.length > 0) {
-    currentWeek.push({ date: null, isCurrentMonth: false, deadlines: [] });
-  }
-  if (currentWeek.length > 0) {
-    weeks.push(currentWeek);
+  } else if (selectedView === 'List') {
+      // For list view, we might not use `weeks` but a separate render.
+      // But to keep return statement simple, maybe we just use `weeks` as a container for all days?
+      // Or we handle it in the JSX.
+      // Let's populate weeks with all days that have deadlines for List View?
+      // No, List View usually is a vertical list of items, not a grid.
+      // We will handle List View in the render section.
   }
 
   const calendar = {
@@ -490,10 +609,9 @@ export default function CalendarDeadlineEngine() {
               >
                 {leftSidebar.deadlineType.label}
               </div>
-              <input
-                type="text"
+              <select
                 value={leftSidebar.deadlineType.value}
-                readOnly
+                onChange={(e) => setSelectedDeadlineType(e.target.value)}
                 style={{
                   width: '100%',
                   padding: '10px 14px',
@@ -505,7 +623,11 @@ export default function CalendarDeadlineEngine() {
                   boxSizing: 'border-box',
                   cursor: 'pointer'
                 }}
-              />
+              >
+                {leftSidebar.deadlineType.options?.map((opt: string) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
             </div>
 
             {/* Date Range */}
@@ -554,10 +676,9 @@ export default function CalendarDeadlineEngine() {
               >
                 {leftSidebar.county.label}
               </div>
-              <input
-                type="text"
+              <select
                 value={leftSidebar.county.value}
-                readOnly
+                onChange={(e) => setSelectedCounty(e.target.value)}
                 style={{
                   width: '100%',
                   padding: '10px 14px',
@@ -569,7 +690,11 @@ export default function CalendarDeadlineEngine() {
                   boxSizing: 'border-box',
                   cursor: 'pointer'
                 }}
-              />
+              >
+                {leftSidebar.county.options?.map((opt: string) => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
             </div>
 
             {/* Legend */}
@@ -654,6 +779,7 @@ export default function CalendarDeadlineEngine() {
               }}
             >
               <button
+                onClick={handleExport}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -806,7 +932,7 @@ export default function CalendarDeadlineEngine() {
                 </div>
                 <div style={{ display: 'flex', gap: isMobile ? 6 : 8 }}>
                   <button
-                    onClick={handlePrevMonth}
+                    onClick={handlePrev}
                     style={{
                       width: isMobile ? 28 : isTablet ? 30 : 32,
                       height: isMobile ? 28 : isTablet ? 30 : 32,
@@ -823,7 +949,7 @@ export default function CalendarDeadlineEngine() {
                     <ChevronLeft style={{ width: isMobile ? 14 : isTablet ? 15 : 16, height: isMobile ? 14 : isTablet ? 15 : 16, color: '#64748B' }} />
                   </button>
                   <button
-                    onClick={handleNextMonth}
+                    onClick={handleNext}
                     style={{
                       width: isMobile ? 28 : isTablet ? 30 : 32,
                       height: isMobile ? 28 : isTablet ? 30 : 32,
@@ -869,7 +995,64 @@ export default function CalendarDeadlineEngine() {
                   ))}
                 </div>
 
-                {/* Calendar Grid */}
+                {/* Calendar Content */}
+                {selectedView === 'List' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    {Array.from(deadlinesByDate.entries())
+                      .sort((a, b) => a[0].localeCompare(b[0]))
+                      .map(([dateKey, deadlines]) => {
+                        const [y, m, d] = dateKey.split('-').map(Number);
+                        const localDate = new Date(y, m - 1, d);
+                        return (
+                      <div key={dateKey}>
+                         <div
+                            style={{
+                              fontSize: 14,
+                              fontWeight: 600,
+                              color: '#64748B',
+                              marginBottom: 8,
+                              paddingBottom: 4,
+                              borderBottom: '1px solid #E2E8F0'
+                            }}
+                          >
+                            {localDate.toLocaleDateString('default', { month: 'long', day: 'numeric', year: 'numeric' })}
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                            {deadlines.map((deadline: any, idx: number) => (
+                              <div
+                                key={idx}
+                                onClick={() => handleDeadlineClick(deadline)}
+                                style={{
+                                  padding: 12,
+                                  borderRadius: 8,
+                                  backgroundColor: '#FFFFFF',
+                                  border: '1px solid #E2E8F0',
+                                  display: 'flex',
+                                  justifyContent: 'space-between',
+                                  alignItems: 'center',
+                                  cursor: 'pointer'
+                                }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                  <div style={{ width: 10, height: 10, borderRadius: '50%', backgroundColor: deadline.color }} />
+                                  <div>
+                                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{deadline.title}</div>
+                                    <div style={{ fontSize: 12, color: '#64748B' }}>{deadline.type} • {deadline.status}</div>
+                                  </div>
+                                </div>
+                                <ChevronRight size={16} color="#94A3B8" />
+                              </div>
+                            ))}
+                          </div>
+                      </div>
+                    ); })}
+                    {deadlinesByDate.size === 0 && (
+                      <div style={{ textAlign: 'center', padding: 20, color: '#64748B' }}>
+                        No deadlines found for this period.
+                      </div>
+                    )}
+                  </div>
+                ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 4 : isTablet ? 6 : 8 }}>
                 {weeks.map((week, weekIdx) => (
                   <div
@@ -902,7 +1085,7 @@ export default function CalendarDeadlineEngine() {
                               style={{
                                 fontSize: isMobile ? 12 : isTablet ? 13 : 14,
                                 fontWeight: 600,
-                                color: '#0F172A',
+                                color: day.isCurrentMonth ? '#0F172A' : '#94A3B8',
                                 lineHeight: 1.2
                               }}
                             >
@@ -941,6 +1124,7 @@ export default function CalendarDeadlineEngine() {
                   </div>
                 ))}
                 </div>
+                )}
               </div>
 
               {/* Calendar Footer */}

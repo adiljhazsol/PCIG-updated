@@ -21,6 +21,7 @@ import { useNavigate } from 'react-router-dom';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
 import api from '../../services/api';
 import InvestorNav from '../../components/investor/InvestorNav';
+import InvestFundModal from '../../components/investor/InvestFundModal';
 
 interface Fund {
   id: string;
@@ -45,6 +46,7 @@ interface Fund {
   button: { text: string; type: string };
   pricePerShare: number;
   description: string;
+  imageUrl?: string;
 }
 
 interface PaginationData {
@@ -94,8 +96,6 @@ export default function FundsMarketplace() {
   // Investment Modal State
   const [investmentModalOpen, setInvestmentModalOpen] = useState(false);
   const [selectedFundForInvestment, setSelectedFundForInvestment] = useState<Fund | null>(null);
-  const [investmentAmount, setInvestmentAmount] = useState('');
-  const [investmentStep, setInvestmentStep] = useState(1); // 1: Input, 2: Success
 
 
   const parseCurrency = (val: string | undefined) => parseFloat(val?.replace(/[^0-9.]/g, '') || '0');
@@ -103,29 +103,41 @@ export default function FundsMarketplace() {
 
   // Helper to map API data to UI Fund interface
   const mapApiFundToUi = (apiFund: any): Fund => {
-    // Determine tag based on name or description (Mock logic as backend doesn't have tag yet)
-    let tag = 'Blended';
-    if (apiFund.name.toLowerCase().includes('redemption')) tag = 'Redemption';
-    else if (apiFund.name.toLowerCase().includes('auction')) tag = 'Auction';
-    else if (apiFund.name.toLowerCase().includes('reo')) tag = 'REO';
+    // Determine tag based on strategy
+    const tag = apiFund.strategy || 'Blended';
 
+    // Define colors for known strategies (using hex for style prop)
     const tagColors: {[key: string]: {color: string, bg: string}} = {
-      'Redemption': { color: 'text-blue-600', bg: 'bg-blue-50' },
-      'Auction': { color: 'text-orange-600', bg: 'bg-orange-50' },
-      'REO': { color: 'text-purple-600', bg: 'bg-purple-50' },
-      'Blended': { color: 'text-emerald-600', bg: 'bg-emerald-50' }
+      'Redemption': { color: '#0284c7', bg: '#e0f2fe' }, // Blue
+      'Auction': { color: '#ea580c', bg: '#ffedd5' },    // Orange
+      'REO': { color: '#7e22ce', bg: '#f3e8ff' },        // Purple
+      'Growth': { color: '#16a34a', bg: '#dcfce7' },     // Green
+      'Income': { color: '#059669', bg: '#ecfdf5' },     // Emerald
+      'Balanced': { color: '#0d9488', bg: '#ccfbf1' },   // Teal
+      'Opportunistic': { color: '#ca8a04', bg: '#fef9c3' }, // Yellow-Dark
+      'Distressed Assets': { color: '#b91c1c', bg: '#fee2e2' }, // Red-Dark
+      'Blended': { color: '#64748b', bg: '#f1f5f9' }     // Slate
     };
 
     const colors = tagColors[tag] || tagColors['Blended'];
     
+    // Calculate capacity metrics
+    const cap = parseFloat(apiFund.cap) || 0;
+    const aum = parseFloat(apiFund.total_assets) || 0;
+    
     // Calculate capacity percent
-    const capacityPercent = apiFund.total_shares > 0 
-      ? Math.round(((apiFund.total_shares - apiFund.available_shares) / apiFund.total_shares) * 100) 
+    const capacityPercent = cap > 0 
+      ? Math.round((aum / cap) * 100) 
       : 0;
       
-    let capacityColor = 'bg-blue-500';
-    if (capacityPercent > 90) capacityColor = 'bg-red-500';
-    else if (capacityPercent > 75) capacityColor = 'bg-orange-500';
+    const remainingVal = cap > 0 ? cap - aum : 0;
+    const remainingStr = cap > 0 
+        ? `$${new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 1 }).format(remainingVal)}` 
+        : 'Open';
+
+    let capacityColor = '#3b82f6'; // blue-500
+    if (capacityPercent > 90) capacityColor = '#ef4444'; // red-500
+    else if (capacityPercent > 75) capacityColor = '#f97316'; // orange-500
 
     return {
       id: apiFund.id.toString(),
@@ -133,23 +145,29 @@ export default function FundsMarketplace() {
       tag: tag,
       tagColor: colors.color,
       tagBgColor: colors.bg,
-      targetIRR: '12-15%', // Mock data
-      realizedIRR: 'N/A', // Mock data
-      returnType: 'Quarterly', // Mock data
-      lockUpPeriod: '12 Months', // Mock data
+      targetIRR: apiFund.target_irr || 'N/A', 
+      realizedIRR: apiFund.performance_metric ? `${apiFund.performance_metric}%` : 'N/A',
+      returnType: 'Quarterly', 
+      lockUpPeriod: apiFund.lock_up_period || 'N/A',
       minInvestment: `$${new Intl.NumberFormat('en-US').format(apiFund.min_investment)}`,
-      fundSize: `$${new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 1 }).format(apiFund.total_assets)}`,
-      remainingCapacity: `$${new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 1 }).format(apiFund.available_shares * apiFund.price_per_share)}`,
+      fundSize: cap > 0 
+        ? `$${new Intl.NumberFormat('en-US', { notation: "compact", maximumFractionDigits: 1 }).format(cap)}`
+        : 'Uncapped',
+      remainingCapacity: remainingStr,
       capacityPercent: capacityPercent,
       capacityColor: capacityColor,
       riskProfile: 'Moderate', // Mock data
       riskLevel: 3, // Mock data
       riskMaxLevel: 5, // Mock data
-      riskColor: 'bg-yellow-500', // Mock data
+      riskColor: '#eab308', // yellow-500
       status: apiFund.status,
-      button: { text: 'View Details', type: 'primary' },
+      button: { 
+          text: apiFund.status === 'coming_soon' ? 'Coming Soon' : 'View Details', 
+          type: 'primary' 
+      },
       pricePerShare: apiFund.price_per_share,
-      description: apiFund.description || ''
+      description: apiFund.description || '',
+      imageUrl: apiFund.image_url
     };
   };
 
@@ -214,10 +232,7 @@ export default function FundsMarketplace() {
   const displayedFunds = funds.filter(fund => {
     // Tag Filter
     if (activeFilter !== 'All') {
-      if (activeFilter === 'Redemption Fund' && fund.tag !== 'Redemption') return false;
-      if (activeFilter === 'Auction Fund' && fund.tag !== 'Auction') return false;
-      if (activeFilter === 'REO Fund' && fund.tag !== 'REO') return false;
-      if (activeFilter === 'Blended Fund' && fund.tag !== 'Blended') return false;
+      if (fund.tag !== activeFilter) return false;
     }
     
     // Min IRR Filter (Mock check since IRR is mock)
@@ -263,7 +278,7 @@ export default function FundsMarketplace() {
       title: "Available Funds",
       subtitle: "Explore our professionally managed investment funds.",
       searchPlaceholder: "Search funds...",
-      filters: ["All", "Redemption Fund", "Auction Fund", "REO Fund", "Blended Fund"],
+      filters: ["All", "Growth", "Income", "Balanced", "Opportunistic", "Distressed Assets", "Redemption", "Auction", "REO", "Blended"],
       sortOptions: ["Highest Target IRR", "Lowest Target IRR", "Highest Min. Investment", "Lowest Min. Investment", "Newest", "Oldest"]
     }
   };
@@ -716,14 +731,31 @@ export default function FundsMarketplace() {
                     key={fund.id}
                     style={{
                       backgroundColor: '#FFFFFF',
-                      padding: `clamp(16px, 2vw, 24px)`,
                       borderRadius: `clamp(8px, 1vw, 12px)`,
                       border: '1px solid #E2E8F0',
                       boxShadow: '0 1px 3px rgba(0, 0, 0, 0.05)',
                       display: 'flex',
-                      flexDirection: 'column'
+                      flexDirection: 'column',
+                      overflow: 'hidden'
                     }}
                   >
+                    {/* Fund Image */}
+                    {fund.imageUrl && (
+                        <div style={{
+                            height: '180px',
+                            width: '100%',
+                            backgroundColor: '#f1f5f9',
+                            borderBottom: '1px solid #e2e8f0'
+                        }}>
+                            <img
+                                src={fund.imageUrl}
+                                alt={fund.name}
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                            />
+                        </div>
+                    )}
+
+                    <div style={{ padding: `clamp(16px, 2vw, 24px)`, display: 'flex', flexDirection: 'column', flex: 1 }}>
                     {/* Tag and Fund Name */}
                     <div style={{ marginBottom: `clamp(16px, 2vh, 20px)` }}>
                       <span style={{
@@ -857,14 +889,13 @@ export default function FundsMarketplace() {
                           transition: 'all 0.2s ease'
                         }}
                       >
-                        View Details
+                        {fund.status === 'coming_soon' ? 'Coming Soon' : 'View Details'}
                       </button>
+                      {fund.status !== 'coming_soon' && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedFundForInvestment(fund);
-                          setInvestmentStep(1);
-                          setInvestmentAmount('');
                           setInvestmentModalOpen(true);
                         }}
                         style={{
@@ -877,11 +908,14 @@ export default function FundsMarketplace() {
                           border: 'none',
                           borderRadius: `clamp(6px, 0.8vw, 8px)`,
                           cursor: 'pointer',
-                          transition: 'all 0.2s ease'
+                          transition: 'all 0.2s ease',
+                          boxShadow: '0 2px 4px rgba(0, 0, 0, 0.1)'
                         }}
                       >
                         Invest
                       </button>
+                      )}
+                    </div>
                     </div>
                   </div>
                 ))}
@@ -1038,8 +1072,6 @@ export default function FundsMarketplace() {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedFundForInvestment(fund);
-                                  setInvestmentStep(1);
-                                  setInvestmentAmount('');
                                   setInvestmentModalOpen(true);
                                 }}
                                 style={{
@@ -1079,6 +1111,22 @@ export default function FundsMarketplace() {
                           gap: `clamp(12px, 1.5vh, 16px)`
                         }}
                       >
+                        {fund.imageUrl && (
+                            <div style={{
+                                height: '150px',
+                                width: '100%',
+                                backgroundColor: '#f1f5f9',
+                                borderRadius: '8px',
+                                overflow: 'hidden',
+                                marginBottom: '12px'
+                            }}>
+                                <img
+                                    src={fund.imageUrl}
+                                    alt={fund.name}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                />
+                            </div>
+                        )}
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontSize: `clamp(13px, 1.4vw, 14px)`, color: '#0F172A', fontWeight: 500, marginBottom: '4px' }}>{fund.id}</div>
@@ -1188,8 +1236,6 @@ export default function FundsMarketplace() {
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedFundForInvestment(fund);
-                                setInvestmentStep(1);
-                                setInvestmentAmount('');
                                 setInvestmentModalOpen(true);
                               }}
                               style={{
@@ -1290,149 +1336,16 @@ export default function FundsMarketplace() {
 
         {/* Investment Modal */}
         {investmentModalOpen && selectedFundForInvestment && (
-          <div style={{
-            position: 'fixed',
-            top: 0,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            backgroundColor: 'rgba(0, 0, 0, 0.5)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            zIndex: 1000,
-            padding: '20px'
-          }}>
-            <div style={{
-              backgroundColor: '#FFFFFF',
-              borderRadius: '12px',
-              width: '100%',
-              maxWidth: '500px',
-              padding: '32px',
-              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-              position: 'relative'
-            }}>
-              <button
-                onClick={() => setInvestmentModalOpen(false)}
-                style={{
-                  position: 'absolute',
-                  top: '16px',
-                  right: '16px',
-                  background: 'none',
-                  border: 'none',
-                  cursor: 'pointer',
-                  color: '#64748B'
-                }}
-              >
-                <X size={24} />
-              </button>
-
-              {investmentStep === 1 ? (
-                <>
-                  <h2 style={{ fontSize: '24px', fontWeight: 700, color: '#0F172A', marginTop: 0, marginBottom: '8px' }}>
-                    Invest in {selectedFundForInvestment.name}
-                  </h2>
-                  <p style={{ color: '#64748B', fontSize: '15px', marginBottom: '24px' }}>
-                    Minimum investment: {selectedFundForInvestment.minInvestment}
-                  </p>
-
-                  <div style={{ marginBottom: '24px' }}>
-                    <label style={{ display: 'block', fontSize: '14px', fontWeight: 600, color: '#0F172A', marginBottom: '8px' }}>
-                      Investment Amount ($)
-                    </label>
-                    <input
-                      type="number"
-                      placeholder="Enter amount..."
-                      value={investmentAmount}
-                      onChange={(e) => setInvestmentAmount(e.target.value)}
-                      style={{
-                        width: '100%',
-                        padding: '12px 16px',
-                        fontSize: '16px',
-                        border: '1px solid #E2E8F0',
-                        borderRadius: '8px',
-                        outline: 'none',
-                        boxSizing: 'border-box'
-                      }}
-                    />
-                  </div>
-
-                  <div style={{ display: 'flex', gap: '12px' }}>
-                    <button
-                      onClick={() => setInvestmentModalOpen(false)}
-                      style={{
-                        flex: 1,
-                        padding: '12px',
-                        borderRadius: '8px',
-                        border: '1px solid #E2E8F0',
-                        backgroundColor: '#FFFFFF',
-                        color: '#0F172A',
-                        fontWeight: 600,
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={() => setInvestmentStep(2)}
-                      disabled={!investmentAmount}
-                      style={{
-                        flex: 1,
-                        padding: '12px',
-                        borderRadius: '8px',
-                        border: 'none',
-                        backgroundColor: '#1E3A5F',
-                        color: '#FFFFFF',
-                        fontWeight: 600,
-                        cursor: investmentAmount ? 'pointer' : 'not-allowed',
-                        opacity: investmentAmount ? 1 : 0.7
-                      }}
-                    >
-                      Continue
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <div style={{ textAlign: 'center', padding: '20px 0' }}>
-                  <div style={{ 
-                    width: '64px', 
-                    height: '64px', 
-                    backgroundColor: '#DCFCE7', 
-                    borderRadius: '50%', 
-                    display: 'flex', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    margin: '0 auto 24px'
-                  }}>
-                    <CheckCircle2 size={32} color="#166534" />
-                  </div>
-                  <h3 style={{ fontSize: '20px', fontWeight: 700, color: '#0F172A', margin: '0 0 12px' }}>
-                    Investment Request Sent!
-                  </h3>
-                  <p style={{ color: '#64748B', fontSize: '15px', lineHeight: 1.5, marginBottom: '32px' }}>
-                    Thank you for your interest in <strong>{selectedFundForInvestment.name}</strong>. 
-                    <br />
-                    Our team has been notified and will contact you shortly with the next steps.
-                  </p>
-                  <button
-                    onClick={() => setInvestmentModalOpen(false)}
-                    style={{
-                      width: '100%',
-                      padding: '12px',
-                      borderRadius: '8px',
-                      border: 'none',
-                      backgroundColor: '#1E3A5F',
-                      color: '#FFFFFF',
-                      fontWeight: 600,
-                      cursor: 'pointer'
-                    }}
-                  >
-                    Close
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
+          <InvestFundModal
+            isOpen={investmentModalOpen}
+            onClose={() => setInvestmentModalOpen(false)}
+            fund={selectedFundForInvestment}
+            onSuccess={() => {
+              fetchFunds();
+              // Optional: close modal automatically after delay or keep it open on success step
+              // For now, let the user close it via the modal's close button
+            }}
+          />
         )}
 
         <style>{`

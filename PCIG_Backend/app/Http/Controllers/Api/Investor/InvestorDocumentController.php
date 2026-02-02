@@ -14,7 +14,7 @@ class InvestorDocumentController extends Controller
     /**
      * List all documents for the authenticated investor.
      */
-    public function list(Request $request): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         $user = $request->user();
         $query = InvestorDocument::where('user_id', $user->id);
@@ -27,13 +27,37 @@ class InvestorDocumentController extends Controller
             $query->where('type', $request->type);
         }
 
+        if ($request->has('search')) {
+            $search = $request->search;
+            $query->where(function($q) use ($search) {
+                $q->where('title', 'like', "%{$search}%")
+                  ->orWhere('type', 'like', "%{$search}%");
+            });
+        }
+
         $documents = $query->latest('generated_at')
             ->orderBy('created_at', 'desc')
             ->paginate(20);
 
+        // Calculate stats (global for the user, ignoring filters for now to match UI labels)
+        $stats = [
+            'total' => InvestorDocument::where('user_id', $user->id)->count(),
+            'new_this_month' => InvestorDocument::where('user_id', $user->id)
+                ->whereMonth('generated_at', now()->month)
+                ->whereYear('generated_at', now()->year)
+                ->count(),
+            'tax_forms' => InvestorDocument::where('user_id', $user->id)
+                ->whereIn('type', ['Tax Documents', 'K-1s']) // Group tax related
+                ->count(),
+            'legal_docs' => InvestorDocument::where('user_id', $user->id)
+                ->whereIn('type', ['Legal Agreements', 'Subscription Agreements']) // Group legal related
+                ->count(),
+        ];
+
         return response()->json([
             'success' => true,
             'data' => $documents,
+            'stats' => $stats,
         ]);
     }
 

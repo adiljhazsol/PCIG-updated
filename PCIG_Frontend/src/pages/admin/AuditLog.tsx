@@ -21,6 +21,51 @@ export default function AuditLog() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Search and Filter State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilters, setActiveFilters] = useState<any>({});
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  const fetchLogs = async (params: any = {}) => {
+    try {
+      setIsRefreshing(true);
+      const queryParams = {
+        search: searchQuery,
+        page: page,
+        ...activeFilters,
+        ...params
+      };
+      
+      // Remove empty filters
+      Object.keys(queryParams).forEach(key => {
+        if (!queryParams[key] || queryParams[key] === 'All Actions' || queryParams[key] === 'All Users') {
+           delete queryParams[key];
+        }
+      });
+
+      const response = await api.get('/admin/audit-log', { params: queryParams });
+      
+      if (response.data && response.data.data) {
+        setData((prev: any) => ({
+          ...prev,
+          rows: response.data.data,
+          summary: {
+            ...prev?.summary,
+            value: response.data.total
+          }
+        }));
+        setPage(response.data.current_page);
+        setTotalPages(response.data.last_page);
+      }
+    } catch (err) {
+      console.error('Error fetching logs:', err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -28,6 +73,9 @@ export default function AuditLog() {
         const response = await api.get('/admin/audit-log/dashboard-data');
         if (response.data && response.data.auditLog) {
           setData(response.data.auditLog);
+          // Initial total pages if available, otherwise default to 1
+          // Since dashboardData limits to 50 and doesn't return pagination, we assume 1 or handle it.
+          // Better to call fetchLogs(1) if we want proper pagination initially, but dashboardData is faster for first paint.
         } else {
           setError('Failed to load audit log data');
         }
@@ -41,6 +89,34 @@ export default function AuditLog() {
 
     fetchData();
   }, []);
+
+  const handleSearch = () => {
+    setPage(1);
+    fetchLogs({ page: 1 });
+  };
+
+  const handleClearFilters = () => {
+    setSearchQuery('');
+    setActiveFilters({});
+    setPage(1);
+    fetchLogs({ search: '', action_type: '', user_role: '', date_range: '', page: 1 });
+  };
+
+  const handleFilterChange = (key: string, value: string) => {
+    setActiveFilters((prev: any) => ({ ...prev, [key]: value }));
+  };
+  
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+        setPage(newPage);
+        fetchLogs({ page: newPage });
+    }
+  };
+  
+  const handleExport = () => {
+      // Mock export functionality
+      alert('Exporting audit log...');
+  };
 
   if (loading) {
     return (
@@ -135,6 +211,7 @@ export default function AuditLog() {
             }}
           >
             <button
+              onClick={() => fetchLogs()}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -149,13 +226,15 @@ export default function AuditLog() {
                 cursor: 'pointer',
                 flex: isMobile ? 1 : 'none',
                 justifyContent: 'center',
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                opacity: isRefreshing ? 0.7 : 1
               }}
             >
               <RefreshCw style={{ width: 16, height: 16, color: '#64748B' }} />
-              Refresh
+              {isRefreshing ? 'Refreshing...' : 'Refresh'}
             </button>
             <button
+              onClick={handleExport}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -205,6 +284,9 @@ export default function AuditLog() {
               />
               <input
                 type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
                 placeholder={searchPlaceholder}
                 style={{
                   width: '100%',
@@ -230,28 +312,35 @@ export default function AuditLog() {
             }}
           >
             {filters.map((filter: any, idx: number) => (
-              <button
-                key={idx}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: isMobile ? '8px 12px' : '9px 14px',
-                  fontSize: isMobile ? 12 : 13,
-                  fontWeight: 500,
-                  color: '#0F172A',
-                  backgroundColor: '#FFFFFF',
-                  borderRadius: 999,
-                  border: '1px solid #E2E8F0',
-                  cursor: 'pointer'
-                }}
-              >
-                {filter.label}
-                <ChevronDown style={{ width: 14, height: 14, color: '#94A3B8' }} />
-              </button>
+              <div key={idx} style={{ position: 'relative' }}>
+                <select
+                  value={activeFilters[filter.key] || ''}
+                  onChange={(e) => handleFilterChange(filter.key, e.target.value)}
+                  style={{
+                    appearance: 'none',
+                    padding: isMobile ? '8px 28px 8px 12px' : '9px 30px 9px 14px',
+                    fontSize: isMobile ? 12 : 13,
+                    fontWeight: 500,
+                    color: '#0F172A',
+                    backgroundColor: '#FFFFFF',
+                    borderRadius: 999,
+                    border: '1px solid #E2E8F0',
+                    cursor: 'pointer',
+                    outline: 'none',
+                    minWidth: 120
+                  }}
+                >
+                  <option value="">{filter.label}</option>
+                  {filter.options.map((opt: string) => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+                <ChevronDown style={{ width: 14, height: 14, color: '#94A3B8', position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+              </div>
             ))}
             <div style={{ flex: 1, minWidth: 0 }} />
             <button
+              onClick={handleSearch}
               style={{
                 padding: isMobile ? '8px 12px' : '9px 16px',
                 fontSize: isMobile ? 12 : 13,
@@ -266,6 +355,7 @@ export default function AuditLog() {
               Search
             </button>
             <button
+              onClick={handleClearFilters}
               style={{
                 padding: isMobile ? '8px 10px' : '9px 14px',
                 fontSize: isMobile ? 12 : 13,
@@ -302,35 +392,44 @@ export default function AuditLog() {
               gap: 8
             }}
           >
+            <span style={{ fontSize: 13, color: '#64748B', marginRight: 8 }}>
+                Page {page} of {totalPages}
+            </span>
             <button
+              onClick={() => handlePageChange(page - 1)}
+              disabled={page === 1}
               style={{
                 width: 30,
                 height: 30,
                 borderRadius: 999,
                 border: '1px solid #E2E8F0',
-                backgroundColor: '#FFFFFF',
+                backgroundColor: page === 1 ? '#F1F5F9' : '#FFFFFF',
+                color: page === 1 ? '#CBD5E1' : '#64748B',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                cursor: 'pointer'
+                cursor: page === 1 ? 'not-allowed' : 'pointer'
               }}
             >
-              <ChevronLeft style={{ width: 16, height: 16, color: '#94A3B8' }} />
+              <ChevronLeft style={{ width: 16, height: 16 }} />
             </button>
             <button
+              onClick={() => handlePageChange(page + 1)}
+              disabled={page === totalPages}
               style={{
                 width: 30,
                 height: 30,
                 borderRadius: 999,
                 border: '1px solid #E2E8F0',
-                backgroundColor: '#FFFFFF',
+                backgroundColor: page === totalPages ? '#F1F5F9' : '#FFFFFF',
+                color: page === totalPages ? '#CBD5E1' : '#64748B',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                cursor: 'pointer'
+                cursor: page === totalPages ? 'not-allowed' : 'pointer'
               }}
             >
-              <ChevronRight style={{ width: 16, height: 16, color: '#94A3B8' }} />
+              <ChevronRight style={{ width: 16, height: 16 }} />
             </button>
           </div>
         </div>

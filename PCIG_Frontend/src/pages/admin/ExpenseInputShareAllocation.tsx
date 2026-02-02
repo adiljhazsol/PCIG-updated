@@ -97,6 +97,11 @@ interface ExpenseDetailPanel {
   };
 }
 
+interface PropertyOption {
+  id: number;
+  address: string;
+}
+
 interface ExpenseData {
   header: ExpenseHeader;
   summaryCards: ExpenseSummaryCard[];
@@ -106,6 +111,7 @@ interface ExpenseData {
   };
   expensesTable: ExpenseTable;
   detailPanel: ExpenseDetailPanel;
+  propertiesList?: PropertyOption[];
 }
 
 export default function ExpenseInputShareAllocation() {
@@ -120,6 +126,21 @@ export default function ExpenseInputShareAllocation() {
 
   const [selectedExpenses, setSelectedExpenses] = useState<Set<string>>(new Set());
   const [selectedExpenseId, setSelectedExpenseId] = useState<string>('');
+
+  // Modal states
+  const [isNewExpenseModalOpen, setIsNewExpenseModalOpen] = useState(false);
+  const [isBulkImportModalOpen, setIsBulkImportModalOpen] = useState(false);
+  const [newExpense, setNewExpense] = useState({
+    property_id: '',
+    date: new Date().toISOString().split('T')[0],
+    amount: '',
+    description: '',
+    category: '',
+    allocation_method: 'ownership_percentage'
+  });
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [propertyOptions, setPropertyOptions] = useState<PropertyOption[]>([]);
 
   // Filter states
   const [searchQuery, setSearchQuery] = useState('');
@@ -191,6 +212,22 @@ export default function ExpenseInputShareAllocation() {
     };
   }, [searchQuery]);
 
+  useEffect(() => {
+    if (isNewExpenseModalOpen) {
+      const fetchProperties = async () => {
+        try {
+          const res = await api.get('/admin/properties/dropdown');
+          if (Array.isArray(res.data)) {
+            setPropertyOptions(res.data);
+          }
+        } catch (error) {
+          console.error('Error fetching properties:', error);
+        }
+      };
+      fetchProperties();
+    }
+  }, [isNewExpenseModalOpen]);
+
   const handleCheckboxChange = (expenseId: string) => {
     setSelectedExpenses((prev) => {
       const newSet = new Set(prev);
@@ -209,6 +246,75 @@ export default function ExpenseInputShareAllocation() {
       setSelectedExpenses(new Set(rows.map((r) => r.id)));
     } else {
       setSelectedExpenses(new Set());
+    }
+  };
+
+  const handleApprove = async (id: string) => {
+    try {
+      await api.post(`/admin/expenses/${id}/approve`);
+      fetchData(); // Refresh data
+    } catch (error) {
+      console.error('Error approving expense:', error);
+      alert('Failed to approve expense');
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    if (!window.confirm('Are you sure you want to reject/delete this expense?')) return;
+    
+    try {
+      await api.delete(`/admin/expenses/${id}`);
+      fetchData(); // Refresh data
+      if (selectedExpenseId === id) setSelectedExpenseId(''); // Clear selection if deleted
+    } catch (error) {
+      console.error('Error rejecting expense:', error);
+      alert('Failed to reject expense');
+    }
+  };
+
+  const handleCreateExpense = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+        await api.post('/admin/expenses', newExpense);
+        setIsNewExpenseModalOpen(false);
+        fetchData();
+        setNewExpense({
+            property_id: '',
+            date: new Date().toISOString().split('T')[0],
+            amount: '',
+            description: '',
+            category: '',
+            allocation_method: 'ownership_percentage'
+        });
+        // alert('Expense created successfully');
+    } catch (error: any) {
+        console.error('Error creating expense:', error);
+        alert(error.response?.data?.message || 'Failed to create expense');
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
+
+  const handleBulkImport = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!importFile) return;
+    
+    setIsSubmitting(true);
+    const formData = new FormData();
+    formData.append('file', importFile);
+    
+    try {
+        const res = await api.post('/admin/expenses/import', formData); // Browser sets boundary automatically
+        setIsBulkImportModalOpen(false);
+        fetchData();
+        setImportFile(null);
+        alert(res.data.message || 'Import successful');
+    } catch (error: any) {
+        console.error('Error importing expenses:', error);
+        alert(error.response?.data?.message || 'Failed to import expenses');
+    } finally {
+        setIsSubmitting(false);
     }
   };
 
@@ -363,6 +469,7 @@ export default function ExpenseInputShareAllocation() {
                 </div>
                 <div style={{ display: 'flex', gap: isMobile ? 8 : 12, flexDirection: isMobile ? 'column' : 'row', width: isMobile ? '100%' : 'auto' }}>
                   <button
+                    onClick={() => setIsBulkImportModalOpen(true)}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -384,6 +491,7 @@ export default function ExpenseInputShareAllocation() {
                     <span style={{ whiteSpace: 'nowrap' }}>{header.actionButtons[0].label}</span>
                   </button>
                   <button
+                    onClick={() => setIsNewExpenseModalOpen(true)}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -407,6 +515,149 @@ export default function ExpenseInputShareAllocation() {
                 </div>
               </div>
             </div>
+
+            {/* Modals */}
+            {isNewExpenseModalOpen && (
+              <div style={{
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: 16
+              }}>
+                <div style={{
+                  backgroundColor: 'white', borderRadius: 12, padding: 24,
+                  width: '100%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+                    <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>New Expense</h2>
+                    <button onClick={() => setIsNewExpenseModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                      <X size={20} color="#64748B" />
+                    </button>
+                  </div>
+                  <form onSubmit={handleCreateExpense} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Date</label>
+                      <input
+                        type="date"
+                        required
+                        value={newExpense.date}
+                        onChange={e => setNewExpense({...newExpense, date: e.target.value})}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 14 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Property</label>
+                      <select
+                        required
+                        value={newExpense.property_id}
+                        onChange={e => setNewExpense({...newExpense, property_id: e.target.value})}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 14 }}
+                      >
+                        <option value="">Select Property</option>
+                        {propertyOptions.length > 0 ? propertyOptions.map(p => (
+                          <option key={p.id} value={p.id}>{p.address}</option>
+                        )) : data?.propertiesList?.map(p => (
+                          <option key={p.id} value={p.id}>{p.address}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Category</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Repairs, Utilities"
+                        value={newExpense.category}
+                        onChange={e => setNewExpense({...newExpense, category: e.target.value})}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 14 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Description</label>
+                      <input
+                        type="text"
+                        required
+                        value={newExpense.description}
+                        onChange={e => setNewExpense({...newExpense, description: e.target.value})}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 14 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Amount</label>
+                      <div style={{ position: 'relative' }}>
+                        <DollarSign size={16} color="#9CA3AF" style={{ position: 'absolute', left: 12, top: 12 }} />
+                        <input
+                          type="number"
+                          step="0.01"
+                          required
+                          value={newExpense.amount}
+                          onChange={e => setNewExpense({...newExpense, amount: e.target.value})}
+                          style={{ width: '100%', padding: '10px 12px 10px 36px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 14 }}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      style={{
+                        backgroundColor: '#2563EB', color: 'white', border: 'none', borderRadius: 8,
+                        padding: '12px', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 8,
+                        opacity: isSubmitting ? 0.7 : 1
+                      }}
+                    >
+                      {isSubmitting ? 'Creating...' : 'Create Expense'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {isBulkImportModalOpen && (
+              <div style={{
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: 16
+              }}>
+                <div style={{
+                  backgroundColor: 'white', borderRadius: 12, padding: 24,
+                  width: '100%', maxWidth: 500
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+                    <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Bulk Import Expenses</h2>
+                    <button onClick={() => setIsBulkImportModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                      <X size={20} color="#64748B" />
+                    </button>
+                  </div>
+                  <form onSubmit={handleBulkImport} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div style={{ border: '2px dashed #E2E8F0', borderRadius: 8, padding: 32, textAlign: 'center' }}>
+                      <Upload size={32} color="#94A3B8" style={{ marginBottom: 12 }} />
+                      <p style={{ margin: '0 0 16px 0', fontSize: 14, color: '#64748B' }}>
+                        Upload a CSV file with columns: Property (Address), Date, Description, Category, Amount
+                      </p>
+                      <input
+                        type="file"
+                        accept=".csv,.xlsx,.xls"
+                        required
+                        onChange={e => setImportFile(e.target.files ? e.target.files[0] : null)}
+                        style={{ width: '100%' }}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={!importFile || isSubmitting}
+                      style={{
+                        backgroundColor: '#2563EB', color: 'white', border: 'none', borderRadius: 8,
+                        padding: '12px', fontSize: 14, fontWeight: 600, cursor: 'pointer', marginTop: 8,
+                        opacity: (!importFile || isSubmitting) ? 0.7 : 1
+                      }}
+                    >
+                      {isSubmitting ? 'Importing...' : 'Import Expenses'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
 
             {/* Summary Cards */}
             <div
@@ -667,9 +918,9 @@ export default function ExpenseInputShareAllocation() {
                             </td>
                         </tr>
                     ) : (
-                        expensesTable.rows.map((row) => (
+                        expensesTable.rows.map((row, idx) => (
                         <tr
-                            key={row.id}
+                            key={`${row.id}-${idx}`}
                             onClick={() => setSelectedExpenseId(row.id)}
                             style={{
                             borderBottom: '1px solid #F1F5F9',
@@ -844,6 +1095,7 @@ export default function ExpenseInputShareAllocation() {
               {/* Actions */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 'auto' }}>
                 <button
+                  onClick={() => handleReject(selectedExpense.id)}
                   style={{
                     padding: '10px',
                     borderRadius: 8,
@@ -862,7 +1114,9 @@ export default function ExpenseInputShareAllocation() {
                   <RejectIcon style={{ width: 16, height: 16 }} />
                   Reject
                 </button>
+                {selectedExpense.status !== 'Allocated' && (
                 <button
+                  onClick={() => handleApprove(selectedExpense.id)}
                   style={{
                     padding: '10px',
                     borderRadius: 8,
@@ -881,6 +1135,7 @@ export default function ExpenseInputShareAllocation() {
                   <CheckIcon style={{ width: 16, height: 16 }} />
                   Approve
                 </button>
+                )}
               </div>
             </div>
           ) : (

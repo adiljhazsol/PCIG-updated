@@ -54,6 +54,7 @@ export default function LawyerPayoffPortal() {
   const rawFees = data?.fees || {};
 
   const propertyInfo = {
+    id: rawProperty.id || 1,
     identified: rawProperty.identified ?? true,
     address: rawProperty.address || '1240 Oak Street, Miami, FL 33133',
     parcelId: rawProperty.parcelId || '01-4138-005-1230'
@@ -61,11 +62,51 @@ export default function LawyerPayoffPortal() {
 
   const clientInfo = {
     name: rawClient.name || 'James Smith',
-    representedBy: rawClient.representedBy || 'Law Firm of Florida'
+    representedBy: rawClient.representedBy || 'Law Firm of Florida',
+    email: rawClient.email || 'james.smith@lawfirm.com'
   };
 
   const fees = {
     processing: rawFees.processing || 50.00
+  };
+
+  const handleSubmit = async () => {
+    if (!cardNumber || !cardExpiry || !cardCVC || !nameOnCard || !billingAddress || !billingCity || !billingState || !billingZip) {
+      alert('Please fill in all payment and billing fields.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await api.post('/admin/payoff/lawyer', {
+        property_id: propertyInfo.id,
+        lawyer_name: clientInfo.representedBy,
+        lawyer_email: clientInfo.email,
+        client_name: clientInfo.name,
+        firm_name: 'Law Firm', // Defaulting since not in form
+        billing_address: billingAddress,
+        billing_city: billingCity,
+        billing_state: billingState,
+        billing_zip: billingZip,
+        card_number: cardNumber,
+        amount: fees.processing
+      });
+      alert('Payment successful and request submitted!');
+      // Reset form or redirect
+      setCardNumber('');
+      setCardExpiry('');
+      setCardCVC('');
+      setNameOnCard('');
+      setBillingAddress('');
+      setBillingCity('');
+      setBillingState('');
+      setBillingZip('');
+    } catch (err) {
+      console.error('Error submitting request:', err);
+      alert('Failed to submit request. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const pageWrapperStyle: CSSProperties = {
@@ -626,19 +667,26 @@ export default function LawyerPayoffPortal() {
 
             {/* Pay Button */}
             <button
+              onClick={handleSubmit}
+              disabled={loading}
               style={{
                 width: '100%',
                 padding: '14px 24px',
                 fontSize: '16px',
                 fontWeight: 600,
                 color: '#FFFFFF',
-                backgroundColor: '#1E3A5F',
+                backgroundColor: loading ? '#94A3B8' : '#1E3A5F',
                 border: 'none',
                 borderRadius: 8,
-                cursor: 'pointer'
+                cursor: loading ? 'not-allowed' : 'pointer',
+                display: 'flex',
+                justifyContent: 'center',
+                alignItems: 'center',
+                gap: 8
               }}
             >
-              Pay $50.00 & Continue
+              {loading && <Loader2 className="animate-spin" size={20} />}
+              {loading ? 'Processing...' : 'Pay $50.00 & Continue'}
             </button>
           </div>
 

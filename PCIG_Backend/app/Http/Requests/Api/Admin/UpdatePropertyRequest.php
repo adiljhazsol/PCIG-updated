@@ -34,6 +34,10 @@ class UpdatePropertyRequest extends FormRequest
             'purchase_date' => 'nullable|date',
             'redemption_deadline' => 'nullable|date',
             'description' => 'nullable|string',
+            'legal_description' => 'nullable|string',
+            'zoning' => 'nullable|string|max:100',
+            'lot_size' => 'nullable|string|max:100',
+            'year_built' => 'nullable|string|max:4',
         ];
     }
 }

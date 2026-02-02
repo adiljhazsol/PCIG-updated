@@ -57,7 +57,67 @@ export default function PropertyTaxAppeal() {
   const [selectedAppealDetails, setSelectedAppealDetails] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [isEditingDetail, setIsEditingDetail] = useState(false);
-  const [detailForm, setDetailForm] = useState<any>({});
+  const [detailForm, setDetailForm] = useState<any>({
+      status: 'draft',
+      filed_date: '',
+      current_assessment: '',
+      proposed_assessment: '',
+      outcome: '',
+      savings: '',
+      notes: ''
+  });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleUploadClick = () => {
+    if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+        fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !selectedAppealDetails) return;
+
+    const formData = new FormData();
+    formData.append('document', file);
+    formData.append('type', 'tax_appeal');
+
+    try {
+        await api.post(`/admin/tax-appeals/${selectedAppealDetails.id}/documents`, formData);
+        // Refresh details to show new document
+        fetchAppealDetails(selectedAppealDetails.id);
+        alert('Document uploaded successfully');
+    } catch (error) {
+        console.error('Error uploading document:', error);
+        alert('Failed to upload document');
+    }
+  };
+
+  const [newNote, setNewNote] = useState('');
+
+  const handleAddNote = async () => {
+      if (!newNote.trim() || !selectedAppealDetails) return;
+      
+      try {
+          // Assuming we update the appeal notes field or add to a log
+          // For now, let's append to the notes field if it's simple string, or use a dedicated endpoint
+          // Since the backend only has 'notes' field, we'll append with timestamp
+          const timestamp = new Date().toISOString().split('T')[0];
+          const updatedNotes = (detailForm.notes ? detailForm.notes + '\n\n' : '') + `[${timestamp}] ${newNote}`;
+          
+          await api.put(`/admin/tax-appeals/${selectedAppealDetails.id}`, {
+              ...detailForm,
+              notes: updatedNotes
+          });
+          
+          setNewNote('');
+          fetchAppealDetails(selectedAppealDetails.id);
+      } catch (err) {
+          console.error('Error adding note:', err);
+          alert('Failed to add note');
+      }
+  };
   
   // New State for Create Modal
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -88,6 +148,9 @@ export default function PropertyTaxAppeal() {
               setSelectedAppealDetails(response.data.data);
               setDetailForm({
                   status: response.data.data.status,
+                  filed_date: response.data.data.filed_date ? response.data.data.filed_date.split('T')[0] : '',
+                  current_assessment: response.data.data.current_assessment,
+                  proposed_assessment: response.data.data.proposed_assessment,
                   outcome: response.data.data.outcome || '',
                   savings: response.data.data.savings || '',
                   notes: response.data.data.notes || ''
@@ -132,6 +195,47 @@ export default function PropertyTaxAppeal() {
           alert('Failed to create appeal');
       }
   };
+
+  const handleGeneratePackage = async () => {
+      if (!selectedAppealDetails) return;
+      try {
+          const response = await api.get(`/admin/tax-appeals/${selectedAppealDetails.id}/package`, {
+              responseType: 'blob'
+          });
+          const url = window.URL.createObjectURL(new Blob([response.data]));
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', `tax-appeal-package-${selectedAppealDetails.id}.pdf`);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+      } catch (err) {
+          console.error('Error generating package:', err);
+          alert('Failed to generate package');
+      }
+  };
+
+  const parseNotes = (notesStr: string) => {
+    if (!notesStr) return [];
+    return notesStr.split('\n\n').map((entry, index) => {
+        const match = entry.match(/^\[(.*?)\] (.*)/s);
+        if (match) {
+            return {
+                id: index,
+                date: match[1],
+                author: 'Admin',
+                text: match[2]
+            };
+        }
+        return {
+            id: index,
+            date: 'Unknown',
+            author: 'Admin',
+            text: entry
+        };
+    }).filter(n => n.text.trim() !== '').reverse();
+  };
+
 
   const fetchDashboardData = async () => {
       try {
@@ -969,6 +1073,33 @@ export default function PropertyTaxAppeal() {
               ) : isEditingDetail ? (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 14 }}>
                       <div>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#64748B', marginBottom: 6 }}>Filed Date</label>
+                          <input 
+                            type="date"
+                            value={detailForm.filed_date}
+                            onChange={e => setDetailForm({...detailForm, filed_date: e.target.value})}
+                            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #E2E8F0', backgroundColor: '#F9FAFB' }}
+                          />
+                      </div>
+                      <div>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#64748B', marginBottom: 6 }}>Current Assessment</label>
+                          <input 
+                            type="number"
+                            value={detailForm.current_assessment}
+                            onChange={e => setDetailForm({...detailForm, current_assessment: e.target.value})}
+                            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #E2E8F0', backgroundColor: '#F9FAFB' }}
+                          />
+                      </div>
+                      <div>
+                          <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#64748B', marginBottom: 6 }}>Proposed Assessment</label>
+                          <input 
+                            type="number"
+                            value={detailForm.proposed_assessment}
+                            onChange={e => setDetailForm({...detailForm, proposed_assessment: e.target.value})}
+                            style={{ width: '100%', padding: '8px 12px', borderRadius: 8, border: '1px solid #E2E8F0', backgroundColor: '#F9FAFB' }}
+                          />
+                      </div>
+                      <div>
                           <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#64748B', marginBottom: 6 }}>Status</label>
                           <select 
                             value={detailForm.status}
@@ -1221,7 +1352,15 @@ export default function PropertyTaxAppeal() {
                 </button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 10 : 12 }}>
-                {detailPanel.evidenceDocs.documents.map((doc: any) => (
+                {(selectedAppealDetails?.documents?.map((doc: any) => ({
+                    id: doc.id,
+                    name: doc.name,
+                    date: new Date(doc.created_at).toLocaleDateString(),
+                    size: doc.size || 'Unknown',
+                    status: 'Uploaded',
+                    statusBg: '#D1FAE5',
+                    statusColor: '#059669'
+                })) || detailPanel.evidenceDocs.documents).map((doc: any) => (
                   <div
                     key={doc.id}
                     style={{
@@ -1303,7 +1442,7 @@ export default function PropertyTaxAppeal() {
                 {detailPanel.notesLog.title}
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 12 : 16, marginBottom: isMobile ? 12 : 16 }}>
-                {detailPanel.notesLog.notes.map((note: any) => (
+                {(selectedAppealDetails?.notes ? parseNotes(selectedAppealDetails.notes) : detailPanel.notesLog.notes).map((note: any) => (
                   <div key={note.id} style={{ width: '100%', minWidth: 0 }}>
                     <div
                       style={{
@@ -1337,6 +1476,13 @@ export default function PropertyTaxAppeal() {
                 <input
                   type="text"
                   placeholder={detailPanel.notesLog.addNotePlaceholder}
+                  value={newNote}
+                  onChange={(e) => setNewNote(e.target.value)}
+                  onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                          handleAddNote();
+                      }
+                  }}
                   style={{
                     flex: 1,
                     padding: isMobile ? '8px 10px' : '8px 12px',
@@ -1350,6 +1496,7 @@ export default function PropertyTaxAppeal() {
                   }}
                 />
                 <button
+                  onClick={handleAddNote}
                   style={{
                     padding: isMobile ? '8px 14px' : '8px 16px',
                     borderRadius: 8,
@@ -1372,6 +1519,7 @@ export default function PropertyTaxAppeal() {
             {/* Action Buttons */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: isMobile ? 10 : 12, width: '100%' }}>
               <button
+                onClick={handleUpdateAppeal}
                 style={{
                   padding: isMobile ? '10px 20px' : '12px 24px',
                   borderRadius: 8,
@@ -1388,6 +1536,7 @@ export default function PropertyTaxAppeal() {
                 {detailPanel.actions.saveChanges}
               </button>
               <button
+                onClick={handleGeneratePackage}
                 style={{
                   padding: isMobile ? '10px 20px' : '12px 24px',
                   borderRadius: 8,

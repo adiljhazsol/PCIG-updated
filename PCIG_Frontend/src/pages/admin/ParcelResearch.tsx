@@ -308,11 +308,7 @@ export default function ParcelResearch() {
     formData.append('file', file);
 
     try {
-        await api.post(`/admin/parcel/${selectedParcelId}/document`, formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data'
-            }
-        });
+        await api.post(`/admin/parcel/${selectedParcelId}/document`, formData);
         alert('Document uploaded successfully');
         // Refresh data to show new document
         fetchData();

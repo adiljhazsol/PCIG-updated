@@ -11,14 +11,16 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('parcel_interactions', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('parcel_research_id')->constrained('parcel_research')->onDelete('cascade');
-            $table->string('type'); // Call, Email, etc.
-            $table->text('notes')->nullable();
-            $table->foreignId('user_id')->constrained()->onDelete('cascade'); // Who logged it
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('parcel_interactions')) {
+            Schema::create('parcel_interactions', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('parcel_research_id')->constrained('parcel_research')->onDelete('cascade');
+                $table->string('type'); // Call, Email, etc.
+                $table->text('notes')->nullable();
+                $table->foreignId('user_id')->constrained()->onDelete('cascade'); // Who logged it
+                $table->timestamps();
+            });
+        }
     }
 
     /**

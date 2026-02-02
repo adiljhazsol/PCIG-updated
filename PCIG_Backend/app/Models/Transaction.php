@@ -13,6 +13,7 @@ class Transaction extends Model
     protected $fillable = [
         'user_id',
         'type',
+        'date',
         'amount',
         'property_id',
         'fund_id',
@@ -26,9 +27,24 @@ class Transaction extends Model
     protected $casts = [
         'amount' => 'decimal:2',
         'metadata' => 'array',
+        'date' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
+
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($model) {
+            if (empty($model->date)) {
+                $model->date = now();
+            }
+            if (empty($model->reference_number)) {
+                $model->reference_number = 'TXN-' . strtoupper(uniqid());
+            }
+        });
+    }
 
     public function user(): BelongsTo
     {

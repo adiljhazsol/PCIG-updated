@@ -42,6 +42,26 @@ class Investment extends Model
         'purchase_date' => 'date',
     ];
 
+    protected static function boot()
+    {
+        parent::boot();
+
+        static::creating(function ($model) {
+            if (empty($model->investment_id)) {
+                $model->investment_id = 'INV-' . strtoupper(uniqid());
+            }
+            if (empty($model->name) && $model->property) {
+                 $model->name = $model->property->address ?? 'Property Investment';
+            }
+            if (empty($model->type)) {
+                $model->type = 'Property';
+            }
+            if (empty($model->current_value)) {
+                $model->current_value = $model->amount;
+            }
+        });
+    }
+
     public function user()
     {
         return $this->belongsTo(User::class);

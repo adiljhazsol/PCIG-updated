@@ -11,7 +11,11 @@ import {
   FileText,
   CheckCircle2,
   Plus,
-  Loader2
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+  Filter,
+  Search
 } from 'lucide-react';
 import AdminNav from '../../components/admin/AdminNav';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
@@ -29,7 +33,9 @@ const iconMap: { [key: string]: any } = {
   User,
   FileText,
   CheckCircle2,
-  Plus
+  Plus,
+  Filter,
+  Search
 };
 
 export default function NotificationsEscalationSystem() {
@@ -42,6 +48,13 @@ export default function NotificationsEscalationSystem() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<string>('notification-center');
   const [preferences, setPreferences] = useState<{ [key: string]: boolean }>({});
+  
+  // New state for tabs
+  const [escalationRules, setEscalationRules] = useState<any[]>([]);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loadingTab, setLoadingTab] = useState<boolean>(false);
+  const [page, setPage] = useState<number>(1);
+  const [hasMore, setHasMore] = useState<boolean>(true);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -73,6 +86,81 @@ export default function NotificationsEscalationSystem() {
     };
     fetchData();
   }, []);
+
+  // Fetch tab specific data
+  useEffect(() => {
+    const fetchTabData = async () => {
+        if (activeTab === 'escalation-matrix' && escalationRules.length === 0) {
+            setLoadingTab(true);
+            try {
+                const res = await api.get('/admin/notifications/escalations');
+                setEscalationRules(res.data.data || []);
+            } catch (err) {
+                console.error('Error fetching escalations:', err);
+            } finally {
+                setLoadingTab(false);
+            }
+        } else if (activeTab === 'logs' && logs.length === 0) {
+            setLoadingTab(true);
+            try {
+                const res = await api.get('/admin/logs');
+                // AdminLogsController returns { success: true, data: Paginator }
+                // So we need res.data.data.data for the array
+                setLogs(res.data.data?.data || []);
+            } catch (err) {
+                console.error('Error fetching logs:', err);
+            } finally {
+                setLoadingTab(false);
+            }
+        }
+    };
+    fetchTabData();
+  }, [activeTab]);
+
+  const handleMarkAllRead = async () => {
+      try {
+          await api.post('/admin/notifications/read-all');
+          // Refresh data or update local state
+          setData((prev: any) => ({
+              ...prev,
+              notificationCenter: {
+                  ...prev.notificationCenter,
+                  notifications: prev.notificationCenter.notifications.map((n: any) => ({ ...n, isUnread: false }))
+              },
+              summaryCards: prev.summaryCards.map((c: any) => c.label === 'Unread Notifications' ? { ...c, value: '0' } : c)
+          }));
+      } catch (err) {
+          console.error('Error marking all read:', err);
+      }
+  };
+
+  const handleUpdatePreference = async (id: string, enabled: boolean) => {
+      // Optimistic update
+      setPreferences(prev => ({ ...prev, [id]: enabled }));
+      
+      try {
+          // Find channel and type from id or data structure (simplified here assuming id contains info or backend handles it)
+          // We'll send the whole updated preferences list or just the change
+          const prefItem = data.rightSidebar.preferences.items.find((p: any) => p.id === id);
+          if (prefItem) {
+              // Map id to channel/type logic if needed, or backend handles "email_deadline" -> channel=email, type=deadline
+              // For now assuming backend can parse or we send raw structure
+              // Let's send a specific structure if backend requires it.
+              // Looking at backend AdminNotificationSettingsController, it expects array of {channel, type, enabled}
+              // We need to parse "email_deadline" -> channel=email, type=deadline
+              const [channel, ...typeParts] = id.split('_');
+              const type = typeParts.join('_');
+              
+              await api.post('/admin/notifications/preferences', {
+                  preferences: [{ channel, type, enabled }]
+              });
+          }
+      } catch (err) {
+          console.error('Error updating preference:', err);
+          // Revert on error
+          setPreferences(prev => ({ ...prev, [id]: !enabled }));
+      }
+  };
 
   // Extract data with safe fallbacks
   const notificationsData = data || {};
@@ -540,6 +628,164 @@ export default function NotificationsEscalationSystem() {
                     {notificationCenter.loadMoreLabel}
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Tab Content - Escalation Matrix */}
+            {activeTab === 'escalation-matrix' && (
+              <div style={{ ...cardStyle, width: '100%', minWidth: 0, overflowX: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#0F172A' }}>Escalation Rules</h3>
+                    <button style={{ 
+                        display: 'flex', alignItems: 'center', gap: 6, 
+                        padding: '8px 12px', borderRadius: 8, 
+                        backgroundColor: '#2563EB', color: '#fff', border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500 
+                    }}>
+                        <Plus size={16} /> Add Rule
+                    </button>
+                </div>
+                
+                {loadingTab ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: '#64748B', display: 'flex', justifyContent: 'center' }}>
+                      <Loader2 className="animate-spin" />
+                  </div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: isMobile ? 12 : 14 }}>
+                    <thead>
+                        <tr style={{ borderBottom: '1px solid #E2E8F0', textAlign: 'left' }}>
+                            <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600, fontSize: 12, textTransform: 'uppercase' }}>Trigger</th>
+                            <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600, fontSize: 12, textTransform: 'uppercase' }}>Delay</th>
+                            <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600, fontSize: 12, textTransform: 'uppercase' }}>Escalate To</th>
+                            <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600, fontSize: 12, textTransform: 'uppercase' }}>Status</th>
+                            <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600, fontSize: 12, textTransform: 'uppercase', textAlign: 'right' }}>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {escalationRules.map((rule: any) => (
+                            <tr key={rule.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                                <td style={{ padding: '12px 16px', color: '#0F172A', fontWeight: 500 }}>{rule.trigger_type}</td>
+                                <td style={{ padding: '12px 16px', color: '#64748B' }}>{rule.delay_hours} hours</td>
+                                <td style={{ padding: '12px 16px', color: '#64748B' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        <div style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: '#E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <User size={14} color="#64748B" />
+                                        </div>
+                                        {rule.escalate_to_user?.name || 'Unknown'}
+                                    </div>
+                                </td>
+                                <td style={{ padding: '12px 16px' }}>
+                                    <span style={{ 
+                                        padding: '4px 10px', 
+                                        borderRadius: 999, 
+                                        backgroundColor: rule.is_active ? '#ECFDF5' : '#F1F5F9',
+                                        color: rule.is_active ? '#10B981' : '#64748B',
+                                        fontSize: 12,
+                                        fontWeight: 500
+                                    }}>
+                                        {rule.is_active ? 'Active' : 'Inactive'}
+                                    </span>
+                                </td>
+                                <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                                    <button style={{ padding: 6, color: '#64748B', background: 'none', border: 'none', cursor: 'pointer' }}>
+                                        <Settings size={16} />
+                                    </button>
+                                </td>
+                            </tr>
+                        ))}
+                        {escalationRules.length === 0 && (
+                            <tr>
+                                <td colSpan={5} style={{ padding: 40, textAlign: 'center', color: '#64748B' }}>
+                                    No escalation rules configured yet.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+            {/* Tab Content - System Logs */}
+            {activeTab === 'logs' && (
+              <div style={{ ...cardStyle, width: '100%', minWidth: 0, overflowX: 'auto' }}>
+                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                    <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600, color: '#0F172A' }}>System Activity Logs</h3>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                         <button style={{ 
+                            display: 'flex', alignItems: 'center', gap: 6, 
+                            padding: '8px 12px', borderRadius: 8, 
+                            backgroundColor: '#FFFFFF', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: 13, fontWeight: 500 
+                        }}>
+                            <Filter size={14} /> Filter
+                        </button>
+                        <button style={{ 
+                            display: 'flex', alignItems: 'center', gap: 6, 
+                            padding: '8px 12px', borderRadius: 8, 
+                            backgroundColor: '#FFFFFF', color: '#64748B', border: '1px solid #E2E8F0', cursor: 'pointer', fontSize: 13, fontWeight: 500 
+                        }}>
+                            <FileText size={14} /> Export
+                        </button>
+                    </div>
+                </div>
+
+                 {loadingTab ? (
+                  <div style={{ padding: 40, textAlign: 'center', color: '#64748B', display: 'flex', justifyContent: 'center' }}>
+                      <Loader2 className="animate-spin" />
+                  </div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: isMobile ? 12 : 14 }}>
+                    <thead>
+                        <tr style={{ borderBottom: '1px solid #E2E8F0', textAlign: 'left' }}>
+                            <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600, fontSize: 12, textTransform: 'uppercase' }}>Timestamp</th>
+                            <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600, fontSize: 12, textTransform: 'uppercase' }}>User</th>
+                            <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600, fontSize: 12, textTransform: 'uppercase' }}>Action</th>
+                            <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600, fontSize: 12, textTransform: 'uppercase' }}>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {logs.map((log: any) => (
+                            <tr key={log.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                                <td style={{ padding: '12px 16px', whiteSpace: 'nowrap', color: '#64748B' }}>
+                                    {new Date(log.created_at).toLocaleString()}
+                                </td>
+                                <td style={{ padding: '12px 16px', color: '#0F172A', fontWeight: 500 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                        {log.causer ? (
+                                             <div style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: '#EFF6FF', color: '#2563EB', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 600 }}>
+                                                {log.causer.name.charAt(0)}
+                                            </div>
+                                        ) : (
+                                            <div style={{ width: 24, height: 24, borderRadius: '50%', backgroundColor: '#F1F5F9', color: '#64748B', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                                <Settings size={14} />
+                                            </div>
+                                        )}
+                                        {log.causer?.name || 'System'}
+                                    </div>
+                                </td>
+                                <td style={{ padding: '12px 16px', color: '#64748B' }}>
+                                    <span style={{ 
+                                        padding: '2px 8px', 
+                                        borderRadius: 4, 
+                                        backgroundColor: '#F8FAFC',
+                                        border: '1px solid #E2E8F0',
+                                        fontSize: 12 
+                                    }}>
+                                        {log.log_name || 'default'}
+                                    </span>
+                                </td>
+                                <td style={{ padding: '12px 16px', color: '#334155' }}>{log.description}</td>
+                            </tr>
+                        ))}
+                         {logs.length === 0 && (
+                            <tr>
+                                <td colSpan={4} style={{ padding: 40, textAlign: 'center', color: '#64748B' }}>
+                                    No activity logs recorded.
+                                </td>
+                            </tr>
+                        )}
+                    </tbody>
+                  </table>
+                )}
               </div>
             )}
           </div>

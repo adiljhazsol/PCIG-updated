@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class AdminImportController extends Controller
 {
@@ -109,6 +110,11 @@ class AdminImportController extends Controller
 
             $data = array_combine($header, $row);
 
+            // Normalize zip code
+            if (!isset($data['zip_code']) && isset($data['zip'])) {
+                $data['zip_code'] = $data['zip'];
+            }
+
             try {
                 // Basic Validation
                 if (empty($data['parcel_id']) && empty($data['address'])) {
@@ -120,18 +126,24 @@ class AdminImportController extends Controller
                     throw new \Exception("Duplicate Parcel ID: " . $data['parcel_id']);
                 }
 
-                Property::create([
+                $createData = [
                     'parcel_id' => $data['parcel_id'] ?? null,
+                    'property_code' => $data['parcel_id'] ?? uniqid('PROP-'), // Use parcel_id or generate unique
                     'address' => $data['address'] ?? 'Unknown Address',
                     'city' => $data['city'] ?? null,
-                    'county' => $data['county'] ?? null,
+                    'county' => $data['county'] ?? 'Unknown',
                     'state' => $data['state'] ?? 'GA',
                     'zip_code' => $data['zip_code'] ?? null,
                     'purchase_price' => isset($data['purchase_price']) ? (float)str_replace(['$', ','], '', $data['purchase_price']) : 0,
                     'status' => 'active',
                     'workflow_stage' => 'research', // Default stage
                     'purchase_date' => isset($data['purchase_date']) ? date('Y-m-d', strtotime($data['purchase_date'])) : now(),
-                ]);
+                ];
+
+                Log::info('Property Fillable Attributes:', (new Property)->getFillable());
+                Log::info('Property Create Data:', $createData);
+
+                Property::create($createData);
 
                 $successCount++;
 

@@ -14,7 +14,7 @@ class AdminParcelResearchController extends Controller
 {
     public function dashboardData(Request $request): JsonResponse
     {
-        $query = ParcelResearch::with(['researcher', 'interactions', 'documents']);
+        $query = ParcelResearch::with(['researcher', 'interactions', 'documents', 'property']);
 
         // Apply Search
         if ($request->has('search') && !empty($request->search)) {
@@ -22,7 +22,9 @@ class AdminParcelResearchController extends Controller
             $query->where(function($q) use ($search) {
                 $q->where('parcel_id', 'like', "%{$search}%")
                   ->orWhere('owner_name', 'like', "%{$search}%")
-                  ->orWhere('situs_address', 'like', "%{$search}%"); // Assuming situs_address is in ParcelResearch or we join properties
+                  ->orWhereHas('property', function($sq) use ($search) {
+                      $sq->where('address', 'like', "%{$search}%");
+                  });
             });
         }
 
@@ -108,15 +110,15 @@ class AdminParcelResearchController extends Controller
                 ];
             });
 
-        // Mock a selected parcel for initial state
+        // Selected parcel for initial state
         $selectedParcel = null;
         if ($recentResearch->isNotEmpty()) {
             $selectedParcel = $recentResearch->first();
             $selectedParcel['selected'] = true;
         } else {
-             // Fallback mock if no data exists, to prevent UI crash
+             // Fallback if no data exists
             $selectedParcel = [
-                'id' => 'mock-1',
+                'id' => '0',
                 'parcelId' => '00-0000-000',
                 'situsAddress' => 'No Data Available',
                 'ownerName' => 'N/A'
@@ -318,7 +320,7 @@ class AdminParcelResearchController extends Controller
     public function search(Request $request): JsonResponse
     {
         // This endpoint would normally integrate with a 3rd party API
-        // For now, it returns local research history + mock data
+        // For now, it returns local research history + local property data
         
         $request->validate([
             'parcel_id' => 'required|string',
@@ -333,14 +335,17 @@ class AdminParcelResearchController extends Controller
             ->orderBy('created_at', 'desc')
             ->get();
 
-        // Mock external data (e.g. from county assessor)
+        // Check internal property database
+        $property = \App\Models\Property::where('parcel_id', $parcelId)->first();
+
+        // External data placeholder (populated from internal DB if available)
         $externalData = [
             'parcel_id' => $parcelId,
-            'owner' => 'Unknown Owner',
-            'address' => '123 County Rd',
-            'assessed_value' => rand(50000, 500000),
-            'tax_due' => rand(1000, 10000),
-            'source' => 'Mock County Assessor API'
+            'owner' => $property->owner ?? 'Unknown Owner',
+            'address' => $property->address ?? 'Unknown Address',
+            'assessed_value' => $property->assessed_value ?? 0,
+            'tax_due' => 0, // Placeholder
+            'source' => $property ? 'Internal Database' : 'External Data Unavailable'
         ];
 
         return response()->json([

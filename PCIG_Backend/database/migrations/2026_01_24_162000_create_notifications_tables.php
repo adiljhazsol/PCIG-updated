@@ -21,15 +21,17 @@ return new class extends Migration
         }
 
         // Escalation Rules Table
-        Schema::create('escalation_rules', function (Blueprint $table) {
-            $table->id();
-            $table->string('trigger_type'); // e.g., 'deadline_overdue', 'task_stalled'
-            $table->integer('delay_hours')->default(24);
-            $table->foreignId('escalate_to_user_id')->constrained('users');
-            $table->string('description')->nullable();
-            $table->boolean('is_active')->default(true);
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('escalation_rules')) {
+            Schema::create('escalation_rules', function (Blueprint $table) {
+                $table->id();
+                $table->string('trigger_type'); // e.g., 'deadline_overdue', 'task_stalled'
+                $table->integer('delay_hours')->default(24);
+                $table->foreignId('escalate_to_user_id')->constrained('users');
+                $table->string('description')->nullable();
+                $table->boolean('is_active')->default(true);
+                $table->timestamps();
+            });
+        }
     }
 
     public function down(): void

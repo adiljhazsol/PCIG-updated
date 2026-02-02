@@ -63,6 +63,12 @@ export default function InvestorsDocuments({ showNav = true }: { showNav?: boole
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [pagination, setPagination] = useState<PaginationData | null>(null);
+  const [stats, setStats] = useState({
+    total: 0,
+    new_this_month: 0,
+    tax_forms: 0,
+    legal_docs: 0
+  });
 
   const [activeCategory, setActiveCategory] = useState<string>('All Documents');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -87,17 +93,31 @@ export default function InvestorsDocuments({ showNav = true }: { showNav?: boole
         responseType: 'blob'
       });
 
+      // Verify content type
+      const contentType = response.headers['content-type'];
+      if (contentType && contentType.includes('application/json')) {
+        const text = await response.data.text();
+        const json = JSON.parse(text);
+        throw new Error(json.message || 'Failed to generate report');
+      }
+
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', `documents_report_${new Date().toISOString().split('T')[0]}.csv`);
       document.body.appendChild(link);
       link.click();
-      link.remove();
+      
+      // Cleanup with delay
+      setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }, 100);
+      
       setShowReportModal(false);
-    } catch (err) {
+    } catch (err: any) {
       console.error('Report generation failed:', err);
-      alert('Failed to generate report. Please try again.');
+      alert(`Failed to generate report: ${err.message || 'Please try again.'}`);
     } finally {
       setGeneratingReport(false);
     }
@@ -115,6 +135,10 @@ export default function InvestorsDocuments({ showNav = true }: { showNav?: boole
 
       if (activeCategory !== 'All Documents') {
         params.type = activeCategory;
+      }
+
+      if (searchQuery) {
+        params.search = searchQuery;
       }
       
       const response = await api.get('/investor/documents', { params });
@@ -146,22 +170,66 @@ export default function InvestorsDocuments({ showNav = true }: { showNav?: boole
     fetchDocuments();
   }, [currentPage, activeCategory]);
 
-  const handleDownload = async (id: number, title: string) => {
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (currentPage === 1) {
+        fetchDocuments();
+      } else {
+        setCurrentPage(1);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const handleDownload = async (id: number, title: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+
     try {
       const response = await api.get(`/investor/documents/${id}/download`, {
         responseType: 'blob'
       });
       
+      // Verify content type
+      const contentType = response.headers['content-type'];
+      if (contentType && contentType.includes('application/json')) {
+        const text = await response.data.text();
+        const json = JSON.parse(text);
+        throw new Error(json.message || 'Failed to download document');
+      }
+
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
-      link.setAttribute('download', title);
+      // Extract extension from content-disposition or default to pdf/txt based on context if possible
+      // For now, let's assume the backend provides the correct filename in Content-Disposition
+      // If not, we might need to guess. The backend does set Content-Disposition.
+      
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = title;
+      if (contentDisposition) {
+        const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(contentDisposition);
+        if (matches != null && matches[1]) { 
+          filename = matches[1].replace(/['"]/g, '');
+        }
+      }
+
+      link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
-      link.remove();
-    } catch (err) {
+      
+      // Cleanup with delay
+      setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+      }, 100);
+
+    } catch (err: any) {
       console.error('Download failed:', err);
-      alert('Failed to download document. Please try again.');
+      alert(`Failed to download document: ${err.message || 'Please try again.'}`);
     }
   };
 
@@ -175,13 +243,8 @@ export default function InvestorsDocuments({ showNav = true }: { showNav?: boole
     });
   };
 
-  // Client-side filtering for search
-  const filteredDocuments = documents.filter(doc => {
-    if (searchQuery && !doc.title.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return false;
-    }
-    return true;
-  });
+  // Client-side filtering removed in favor of server-side search
+  const filteredDocuments = documents;
 
   // Calculate summary statistics (approximated from current view + pagination total)
   const currentDate = new Date();
@@ -320,28 +383,28 @@ export default function InvestorsDocuments({ showNav = true }: { showNav?: boole
             {[
               {
                 title: 'Total Documents',
-                value: totalDocuments.toString(),
+                value: stats.total.toString(),
                 icon: FileText,
                 color: '#3B82F6',
                 bgColor: '#EFF6FF'
               },
               {
                 title: 'New This Month',
-                value: newThisMonth.toString(),
+                value: stats.new_this_month.toString(),
                 icon: BarChart3,
                 color: '#10B981',
                 bgColor: '#ECFDF5'
               },
               {
                 title: 'Tax Forms',
-                value: documents.filter(d => d.type === 'Tax Documents').length.toString(), 
+                value: stats.tax_forms.toString(), 
                 icon: Receipt,
                 color: '#F59E0B',
                 bgColor: '#FFFBEB'
               },
               {
                 title: 'Legal Docs',
-                value: documents.filter(d => d.type === 'Legal Agreements').length.toString(),
+                value: stats.legal_docs.toString(),
                 icon: Shield,
                 color: '#8B5CF6',
                 bgColor: '#F5F3FF'

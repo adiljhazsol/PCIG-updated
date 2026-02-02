@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, CheckCircle, Info, DollarSign } from 'lucide-react';
 import InvestorNav from '../../components/investor/InvestorNav';
 import { useIsMobile } from '../../hooks/useMediaQuery';
 import { useNavigate } from 'react-router-dom';
+import api from '../../services/api';
 
 export default function ListShares() {
     const isMobile = useIsMobile();
@@ -12,13 +13,55 @@ export default function ListShares() {
     const [shares, setShares] = useState('');
     const [price, setPrice] = useState('');
     const [submitted, setSubmitted] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [error, setError] = useState<string | null>(null);
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const [ownedProperties, setOwnedProperties] = useState<any[]>([]);
+    const [isLoadingProperties, setIsLoadingProperties] = useState(false);
+
+    useEffect(() => {
+        const fetchOwnedProperties = async () => {
+            setIsLoadingProperties(true);
+            try {
+                const response = await api.get('/investor/shares/portfolio');
+                if (response.data.success) {
+                    // Filter properties where user has shares > 0
+                    const validProperties = response.data.data.filter((item: any) => parseFloat(item.shares) > 0);
+                    setOwnedProperties(validProperties);
+                }
+            } catch (error) {
+                console.error('Failed to fetch properties', error);
+            } finally {
+                setIsLoadingProperties(false);
+            }
+        };
+        fetchOwnedProperties();
+    }, []);
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setSubmitted(true);
-        setTimeout(() => {
-            navigate('/investor/share-marketplace');
-        }, 2000);
+        setError(null);
+        setIsSubmitting(true);
+
+        try {
+            const response = await api.post('/investor/shares/list', {
+                property_id: property,
+                shares: parseInt(shares),
+                price_per_share: parseFloat(price)
+            });
+
+            if (response.data.success) {
+                setSubmitted(true);
+                setTimeout(() => {
+                    navigate('/investor/share-marketplace');
+                }, 2000);
+            }
+        } catch (err: any) {
+            console.error('Failed to list shares:', err);
+            setError(err.response?.data?.message || 'Failed to list shares. Please try again.');
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
     if (submitted) {
@@ -46,6 +89,11 @@ export default function ListShares() {
                 <p style={{ color: '#64748B', marginBottom: 32 }}>Sell your property shares to other investors.</p>
 
                 <div style={{ backgroundColor: '#fff', padding: 24, borderRadius: 12, border: '1px solid #E2E8F0' }}>
+                    {error && (
+                        <div style={{ backgroundColor: '#FEF2F2', color: '#B91C1C', padding: '12px', borderRadius: '6px', marginBottom: '24px', fontSize: '14px' }}>
+                            {error}
+                        </div>
+                    )}
                     <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
                         <div>
                             <label style={{ display: 'block', marginBottom: 8, fontWeight: 500, color: '#475569' }}>Property</label>
@@ -53,11 +101,15 @@ export default function ListShares() {
                                 value={property} 
                                 onChange={(e) => setProperty(e.target.value)}
                                 required
+                                disabled={isLoadingProperties}
                                 style={{ width: '100%', padding: 12, borderRadius: 6, border: '1px solid #CBD5E1', fontSize: 15 }}
                             >
                                 <option value="">Select a property...</option>
-                                <option value="PCIG-2024-001">1240 Oak Street (Miami, FL)</option>
-                                <option value="PCIG-2023-104">8500 Sunset Blvd (Los Angeles, CA)</option>
+                                {ownedProperties.map((item) => (
+                                    <option key={item.id} value={item.property?.id}>
+                                        {item.property?.address} ({item.shares} shares available)
+                                    </option>
+                                ))}
                             </select>
                         </div>
 
@@ -98,18 +150,19 @@ export default function ListShares() {
 
                         <button 
                             type="submit"
+                            disabled={isSubmitting}
                             style={{ 
-                                backgroundColor: '#1E3A5F', 
+                                backgroundColor: isSubmitting ? '#94A3B8' : '#1E3A5F', 
                                 color: '#fff', 
                                 padding: 14, 
                                 borderRadius: 6, 
                                 border: 'none', 
                                 fontWeight: 600, 
                                 fontSize: 16, 
-                                cursor: 'pointer' 
+                                cursor: isSubmitting ? 'not-allowed' : 'pointer' 
                             }}
                         >
-                            Create Listing
+                            {isSubmitting ? 'Creating Listing...' : 'Create Listing'}
                         </button>
                     </form>
                 </div>

@@ -23,6 +23,7 @@ class InvestFundRequest extends FormRequest
         return [
             'fund_id' => 'required|exists:funds,id',
             'amount' => 'required|numeric|min:1000',
+            'bank_account_id' => 'required|exists:bank_accounts,id',
         ];
     }
 }

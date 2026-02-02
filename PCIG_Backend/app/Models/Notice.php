@@ -19,6 +19,7 @@ class Notice extends Model
         'sent_date',
         'status',
         'file_path',
+        'tracking_number',
         'created_by',
     ];
 

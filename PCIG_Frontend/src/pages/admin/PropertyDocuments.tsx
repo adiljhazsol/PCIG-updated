@@ -123,11 +123,7 @@ export default function PropertyDocuments() {
         formData.append('type', uploadFolderType);
 
         try {
-            await api.post(`/admin/properties/${propertyId}/documents`, formData, {
-                headers: {
-                    'Content-Type': 'multipart/form-data',
-                },
-            });
+            await api.post(`/admin/properties/${propertyId}/documents`, formData);
             // Refresh data
             fetchData();
             // Optional: Show success toast/alert

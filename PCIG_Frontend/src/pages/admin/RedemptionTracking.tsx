@@ -11,9 +11,7 @@ import {
     History,
     ArrowRight,
     X,
-    TrendingUp,
-    ChevronLeft,
-    ChevronRight
+    TrendingUp
 } from 'lucide-react';
 import AdminNav from '../../components/admin/AdminNav';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
@@ -41,74 +39,38 @@ export default function RedemptionTracking() {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    // Table Data (Search, Filter, Pagination)
-    const [search, setSearch] = useState('');
-    const [debouncedSearch, setDebouncedSearch] = useState('');
-    const [statusFilter, setStatusFilter] = useState('All Status');
-    const [page, setPage] = useState(1);
-    const [propertiesData, setPropertiesData] = useState<any[]>([]);
-    const [pagination, setPagination] = useState<any>(null);
-    const [loadingProperties, setLoadingProperties] = useState(false);
-
-    // Debounce Search
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            setDebouncedSearch(search);
-            setPage(1); // Reset to page 1 on search change
-        }, 500);
-        return () => clearTimeout(timer);
-    }, [search]);
-
     // Fetch Dashboard Data (Initial Load)
-    useEffect(() => {
-        const fetchData = async () => {
-            try {
-                const response = await api.get('/admin/redemption/dashboard-data');
-                setData(response.data);
-                setLoading(false);
-            } catch (err) {
-                console.error('Error fetching redemption data:', err);
-                setError('Failed to load redemption data. Please try again later.');
-                setLoading(false);
-            }
-        };
+    const fetchData = async () => {
+        try {
+            const response = await api.get('/admin/redemption/dashboard-data');
+            setData(response.data);
+            setLoading(false);
+        } catch (err) {
+            console.error('Error fetching redemption data:', err);
+            setError('Failed to load redemption data. Please try again later.');
+            setLoading(false);
+        }
+    };
 
+    useEffect(() => {
         fetchData();
     }, []);
-
-    // Fetch Properties Table Data
-    useEffect(() => {
-        const fetchProperties = async () => {
-            setLoadingProperties(true);
-            try {
-                const response = await api.get('/admin/redemption/properties', {
-                    params: {
-                        search: debouncedSearch,
-                        status: statusFilter,
-                        page: page
-                    }
-                });
-                if (response.data.success) {
-                    setPropertiesData(response.data.data);
-                    setPagination(response.data.meta);
-                }
-            } catch (err) {
-                console.error('Error fetching properties:', err);
-            } finally {
-                setLoadingProperties(false);
-            }
-        };
-
-        fetchProperties();
-    }, [debouncedSearch, statusFilter, page]);
 
     const navigate = useNavigate();
 
     const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
     const [searchTerm, setSearchTerm] = useState('');
-    const [sortAsc, setSortAsc] = useState(true);
     // Sidebar State
     const [selectedProperty, setSelectedProperty] = useState<any | null>(null);
+
+    // Redemption Modal State
+    const [showRedemptionModal, setShowRedemptionModal] = useState(false);
+    const [redemptionAmount, setRedemptionAmount] = useState('');
+    const [redemptionProperty, setRedemptionProperty] = useState<any>(null);
+    const [processingRedemption, setProcessingRedemption] = useState(false);
+
+    const [sortConfig, setSortConfig] = useState<{ key: string | null, direction: 'asc' | 'desc' }>({ key: null, direction: 'asc' });
+    const [filterMonth, setFilterMonth] = useState(false);
 
     const pageWrapperStyle: CSSProperties = {
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -138,14 +100,6 @@ export default function RedemptionTracking() {
     // Data Extraction
     const redemptionData = data || {};
     const header = redemptionData?.header || { title: '', subtitle: '' };
-    
-    const rawActionButtons = header?.actionButtons || [];
-    
-    // Map array to object for easy access if needed, or use directly
-    const actionButtons = {
-        processPayoff: rawActionButtons.find((b: any) => b.label === 'Process Payoff') || { label: 'Process Payoff', icon: 'DollarSign' },
-        viewHistory: rawActionButtons.find((b: any) => b.label === 'View History') || { label: 'View History', icon: 'History' }
-    };
     
     const summaryCards = redemptionData?.summaryCards || [];
     const alertBanner = redemptionData?.alertBanner || null;
@@ -247,6 +201,89 @@ export default function RedemptionTracking() {
                 {status.label}
             </span>
         );
+    };
+
+    // --- Handlers ---
+
+    const handleGeneratePayoffLetter = async (propertyId: string) => {
+        try {
+            const response = await api.get(`/admin/redemption/${propertyId}/payoff-letter`, { 
+                responseType: 'blob',
+                headers: { 'Accept': 'application/pdf' }
+            });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `payoff_letter_${propertyId}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.parentNode?.removeChild(link);
+        } catch (e: any) {
+            console.error(e);
+            
+            // Handle IDM/Network interruptions gracefully
+            if (e.code === 'ERR_NETWORK') {
+                 console.warn('Network Error detected - likely IDM interception');
+                 // Do not alert user as IDM likely handled the file
+            } else if (e.response) {
+                alert('Failed to generate letter: ' + (e.response.data?.error || 'Server error'));
+            } else {
+                alert('An error occurred while generating the letter.');
+            }
+        }
+    };
+
+    const handleProcessRedemption = (property: any) => {
+        // Remove all non-numeric characters except dot
+        const amountStr = property.estimatedPayoff ? property.estimatedPayoff.replace(/[^0-9.]/g, '') : '0.00';
+        setRedemptionAmount(amountStr);
+        setRedemptionProperty(property);
+        setShowRedemptionModal(true);
+    };
+
+    const confirmRedemption = async () => {
+        if (!redemptionProperty) return;
+        
+        setProcessingRedemption(true);
+        try {
+            await api.post(`/admin/redemption/${redemptionProperty.id}/redeem`, { 
+                redemption_amount: parseFloat(redemptionAmount) 
+            });
+            // Close modal and refresh data
+            setShowRedemptionModal(false);
+            setRedemptionProperty(null);
+            alert('Redemption processed successfully');
+            fetchData();
+        } catch (e: any) {
+            console.error(e);
+            const errorMsg = e.response?.data?.message || e.response?.data?.error || e.message || 'Unknown error';
+            alert('Failed to process redemption: ' + errorMsg);
+        } finally {
+            setProcessingRedemption(false);
+        }
+    };
+
+    const handleExportHistory = () => {
+        if (!history.rows.length) return;
+        const csvContent = "data:text/csv;charset=utf-8," 
+            + history.tableHeaders.join(",") + "\n"
+            + history.rows.map((row: any) => [
+                row.property.parcelId, row.owner, row.redemptionDate, row.amount, row.method, row.status, row.processedBy
+            ].join(",")).join("\n");
+        const encodedUri = encodeURI(csvContent);
+        const link = document.createElement("a");
+        link.setAttribute("href", encodedUri);
+        link.setAttribute("download", "redemption_history.csv");
+        document.body.appendChild(link);
+        link.click();
+    };
+
+    const handleSort = (key: string) => {
+        let direction: 'asc' | 'desc' = 'asc';
+        if (sortConfig.key === key && sortConfig.direction === 'asc') {
+            direction = 'desc';
+        }
+        setSortConfig({ key, direction });
     };
 
     // --- Sidebar Component ---
@@ -361,16 +398,20 @@ export default function RedemptionTracking() {
 
                 {/* Footer Actions */}
                 <div style={{ padding: '24px 32px', borderTop: '1px solid #E2E8F0', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                    <button style={{
-                        width: '100%', padding: '14px', borderRadius: 6, border: 'none',
-                        backgroundColor: '#1E3A5F', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 14
-                    }}>
+                    <button 
+                        onClick={() => handleGeneratePayoffLetter(property.id)}
+                        style={{
+                            width: '100%', padding: '14px', borderRadius: 6, border: 'none',
+                            backgroundColor: '#1E3A5F', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 14
+                        }}>
                         Generate Payoff Letter
                     </button>
-                    <button style={{
-                        width: '100%', padding: '14px', borderRadius: 6, border: 'none',
-                        backgroundColor: '#10B981', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 14
-                    }}>
+                    <button 
+                        onClick={() => handleProcessRedemption(property)}
+                        style={{
+                            width: '100%', padding: '14px', borderRadius: 6, border: 'none',
+                            backgroundColor: '#10B981', color: '#fff', fontWeight: 600, cursor: 'pointer', fontSize: 14
+                        }}>
                         Process Redemption
                     </button>
                 </div>
@@ -421,26 +462,7 @@ export default function RedemptionTracking() {
                             <p style={{ fontSize: 14, color: '#64748B', margin: 0 }}>{header.subtitle}</p>
                         </div>
                         <div style={{ display: 'flex', gap: 12, width: isMobile ? '100%' : 'auto', flexDirection: isMobile ? 'column' : 'row' }}>
-                            <button style={{
-                                display: 'flex', alignItems: 'center', gap: 8,
-                                backgroundColor: '#1E3A5F', color: '#FFFFFF',
-                                border: 'none', borderRadius: 6, padding: '10px 16px',
-                                fontSize: 14, fontWeight: 500, cursor: 'pointer',
-                                justifyContent: 'center', width: isMobile ? '100%' : 'auto'
-                            }}>
-                                <DollarSign size={16} />
-                                {actionButtons.processPayoff.label}
-                            </button>
-                            <button style={{
-                                display: 'flex', alignItems: 'center', gap: 8,
-                                backgroundColor: '#FFFFFF', color: '#0F172A',
-                                border: '1px solid #E2E8F0', borderRadius: 6, padding: '10px 16px',
-                                fontSize: 14, fontWeight: 500, cursor: 'pointer',
-                                justifyContent: 'center', width: isMobile ? '100%' : 'auto'
-                            }}>
-                                <History size={16} />
-                                {actionButtons.viewHistory.label}
-                            </button>
+                            {/* Buttons removed as per request */}
                         </div>
                     </div>
 
@@ -574,7 +596,7 @@ export default function RedemptionTracking() {
                                 </span>
                             </h3>
                             <button
-                                onClick={() => setSortAsc(!sortAsc)}
+                                onClick={() => handleSort('deadline')}
                                 style={{
                                     backgroundColor: '#FFFFFF', color: '#0F172A',
                                     border: '1px solid #E2E8F0', borderRadius: 4, padding: '6px 12px',
@@ -582,7 +604,7 @@ export default function RedemptionTracking() {
                                     display: 'flex', alignItems: 'center', gap: 6
                                 }}>
                                 Sort
-                                <ArrowRight size={12} style={{ transform: sortAsc ? 'rotate(90deg)' : 'rotate(-90deg)' }} />
+                                <ArrowRight size={12} style={{ transform: sortConfig.direction === 'asc' ? 'rotate(-90deg)' : 'rotate(90deg)' }} />
                             </button>
                         </div>
 
@@ -604,8 +626,25 @@ export default function RedemptionTracking() {
                                                 row.parcelId.toLowerCase().includes(term);
                                         })
                                         .sort((a: any, b: any) => {
-                                            // Simple deadline sort for demo
-                                            return sortAsc ? a.daysRemaining.localeCompare(b.daysRemaining) : b.daysRemaining.localeCompare(a.daysRemaining);
+                                            if (!sortConfig.key) return 0;
+                                            // Handle special case for deadline daysRemaining which is a string like "15 Days"
+                                            if (sortConfig.key === 'deadline') {
+                                                 const getDays = (str: string) => {
+                                                     if (!str) return 999;
+                                                     if (str.toLowerCase().includes('today')) return 0;
+                                                     if (str.toLowerCase().includes('expired')) return -1;
+                                                     const match = str.match(/-?\d+/);
+                                                     return match ? parseInt(match[0]) : 999;
+                                                 };
+                                                 const aDays = getDays(a.daysRemaining);
+                                                 const bDays = getDays(b.daysRemaining);
+                                                 return sortConfig.direction === 'asc' ? aDays - bDays : bDays - aDays;
+                                            }
+                                            const aVal = a[sortConfig.key] || '';
+                                            const bVal = b[sortConfig.key] || '';
+                                            if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
+                                            if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
+                                            return 0;
                                         })
                                         .map((row: any, idx: number) => (
                                             <tr
@@ -696,10 +735,14 @@ export default function RedemptionTracking() {
                                 <p style={{ fontSize: 13, color: '#64748B', margin: '4px 0 0 0' }}>{history.subtitle}</p>
                             </div>
                             <div style={{ display: 'flex', gap: 12 }}>
-                                <button style={{ backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: 6, padding: '8px 12px', fontSize: 13, fontWeight: 500, color: '#0F172A', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <button 
+                                    onClick={() => setFilterMonth(!filterMonth)}
+                                    style={{ backgroundColor: filterMonth ? '#EFF6FF' : '#fff', border: filterMonth ? '1px solid #1E3A5F' : '1px solid #E2E8F0', borderRadius: 6, padding: '8px 12px', fontSize: 13, fontWeight: 500, color: '#0F172A', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                                     This Month <ChevronDown size={14} />
                                 </button>
-                                <button style={{ backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: 6, padding: '8px 12px', fontSize: 13, fontWeight: 500, color: '#0F172A', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <button 
+                                    onClick={handleExportHistory}
+                                    style={{ backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: 6, padding: '8px 12px', fontSize: 13, fontWeight: 500, color: '#0F172A', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                                     <ArrowRight size={14} style={{ transform: 'rotate(-90deg)' }} /> Export
                                 </button>
                             </div>
@@ -714,7 +757,17 @@ export default function RedemptionTracking() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {history.rows.map((row: any, idx: number) => (
+                                    {history.rows
+                                        .filter((row: any) => {
+                                            if (!filterMonth) return true;
+                                            const rowDate = new Date(row.redemptionDate);
+                                            const now = new Date();
+                                            // Ensure valid date
+                                            if (isNaN(rowDate.getTime())) return false;
+                                            return rowDate.getMonth() === now.getMonth() && 
+                                                   rowDate.getFullYear() === now.getFullYear();
+                                        })
+                                        .map((row: any, idx: number) => (
                                         <tr key={idx} style={{ borderBottom: '1px solid #E2E8F0' }}>
                                             <td style={{ padding: '16px 24px' }}>
                                                 <div style={{ fontWeight: 600, color: '#0F172A' }}>{row.property.parcelId}</div>
@@ -747,6 +800,117 @@ export default function RedemptionTracking() {
                 {/* Sidebar Column */}
                 {selectedProperty && <SidePanel property={selectedProperty} onClose={() => setSelectedProperty(null)} />}
             </div>
+
+            {/* Redemption Modal */}
+            {showRedemptionModal && redemptionProperty && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    zIndex: 1000,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    padding: 16
+                }}>
+                    <div style={{
+                        backgroundColor: '#FFFFFF',
+                        borderRadius: 12,
+                        padding: '24px',
+                        width: '100%',
+                        maxWidth: '400px',
+                        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+                    }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                            <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                                Confirm Redemption
+                            </h3>
+                            <button
+                                onClick={() => setShowRedemptionModal(false)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B', padding: 4 }}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        
+                        <div style={{ marginBottom: 20 }}>
+                            <div style={{ fontSize: 14, color: '#64748B', marginBottom: 4 }}>Property</div>
+                            <div style={{ fontSize: 15, fontWeight: 500, color: '#0F172A' }}>
+                                {redemptionProperty.address}
+                            </div>
+                            <div style={{ fontSize: 13, color: '#64748B' }}>
+                                {redemptionProperty.parcelId}
+                            </div>
+                        </div>
+
+                        <div style={{ marginBottom: 24 }}>
+                            <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#0F172A', marginBottom: 8 }}>
+                                Redemption Amount ($)
+                            </label>
+                            <input
+                                type="number"
+                                step="0.01"
+                                value={redemptionAmount}
+                                onChange={(e) => setRedemptionAmount(e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    borderRadius: 6,
+                                    border: '1px solid #E2E8F0',
+                                    fontSize: 16,
+                                    fontWeight: 500,
+                                    color: '#0F172A',
+                                    outline: 'none',
+                                    boxSizing: 'border-box'
+                                }}
+                                autoFocus
+                            />
+                        </div>
+
+                        <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+                            <button
+                                onClick={() => setShowRedemptionModal(false)}
+                                disabled={processingRedemption}
+                                style={{
+                                    padding: '10px 16px',
+                                    borderRadius: 6,
+                                    border: '1px solid #E2E8F0',
+                                    backgroundColor: '#FFFFFF',
+                                    color: '#64748B',
+                                    fontSize: 14,
+                                    fontWeight: 500,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmRedemption}
+                                disabled={processingRedemption}
+                                style={{
+                                    padding: '10px 16px',
+                                    borderRadius: 6,
+                                    border: 'none',
+                                    backgroundColor: '#10B981',
+                                    color: '#FFFFFF',
+                                    fontSize: 14,
+                                    fontWeight: 500,
+                                    cursor: 'pointer',
+                                    opacity: processingRedemption ? 0.7 : 1,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: 8
+                                }}
+                            >
+                                {processingRedemption ? 'Processing...' : 'Confirm Redemption'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

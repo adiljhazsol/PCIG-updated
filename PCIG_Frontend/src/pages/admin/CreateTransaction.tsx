@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import { ArrowLeft, Save, FileText, User, DollarSign } from 'lucide-react';
 import AdminNav from '../../components/admin/AdminNav';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
@@ -12,12 +13,35 @@ export default function CreateTransaction() {
     // Mock Data for Dropdowns
     const TRANSACTION_TYPES = ['Buy', 'Sell', 'Lease'];
     const STATUS_OPTIONS = ['Draft', 'Under Contract', 'Closed', 'Terminated'];
-    const ASSETS = [
-        { id: 'PCIG-2024-001', address: '1240 Oak Street' },
-        { id: 'PCIG-2024-014', address: '532 Lakeview Ave' },
-        { id: 'PCIG-2024-032', address: '88 Pinecrest Dr' },
-        { id: 'PCIG-2024-041', address: '19 Coral Way' }
-    ];
+    
+    const [assets, setAssets] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchProperties = async () => {
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    navigate('/login');
+                    return;
+                }
+
+                const response = await axios.get('http://127.0.0.1:8000/api/admin/reo/all-properties', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json'
+                    }
+                });
+                setAssets(response.data);
+            } catch (error) {
+                console.error('Error fetching properties:', error);
+            } finally {
+                setLoading(false);
+            }
+        };
+
+        fetchProperties();
+    }, [navigate]);
 
     const [formData, setFormData] = useState({
         type: 'Sell',
@@ -35,18 +59,126 @@ export default function CreateTransaction() {
         notes: ''
     });
 
+    const [errors, setErrors] = useState<Record<string, string[]>>({});
+    const [generalError, setGeneralError] = useState<string | null>(null);
+
     const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
+        
+        // Clear error when user types
+        if (errors[name]) {
+            setErrors(prev => {
+                const newErrors = { ...prev };
+                delete newErrors[name];
+                return newErrors;
+            });
+        }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const getInputStyle = (fieldName: string) => ({
+        padding: '10px',
+        borderRadius: 6,
+        border: `1px solid ${errors[fieldName] ? '#EF4444' : '#CBD5E1'}`,
+        fontSize: isMobile ? 16 : 14,
+        width: '100%',
+        boxSizing: 'border-box' as 'border-box'
+    });
+
+    const renderError = (fieldName: string) => {
+        if (!errors[fieldName]) return null;
+        return (
+            <div style={{ color: '#EF4444', fontSize: 12, marginTop: 4 }}>
+                {errors[fieldName][0]}
+            </div>
+        );
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        console.log('Submitting Transaction:', formData);
-        // Simulate API call
-        setTimeout(() => {
+        setGeneralError(null);
+        setErrors({});
+        
+        try {
+            const token = localStorage.getItem('token');
+            if (!token) {
+                navigate('/login');
+                return;
+            }
+
+            // Map frontend types to backend types
+            let backendType = 'sale';
+            if (formData.type === 'Buy') backendType = 'purchase';
+            else if (formData.type === 'Sell') backendType = 'sale';
+            else if (formData.type === 'Lease') backendType = 'sale'; // Fallback for Lease
+
+            // Map status
+            let backendStatus = 'pending';
+            if (formData.status === 'Closed') backendStatus = 'completed';
+            else if (formData.status === 'Terminated') backendStatus = 'cancelled';
+            else backendStatus = 'pending'; // Draft/Under Contract
+
+            const payload = {
+                type: backendType,
+                status: backendStatus,
+                amount: parseFloat(formData.price.replace(/[^0-9.-]+/g, "")) || 0,
+                property_id: formData.assetId || null,
+                description: `Transaction: ${formData.type} - ${formData.notes || ''}`,
+                metadata: {
+                    original_type: formData.type,
+                    original_status: formData.status,
+                    counterparty: {
+                        name: formData.counterpartyName,
+                        role: formData.counterpartyRole,
+                        email: formData.counterpartyEmail,
+                        phone: formData.counterpartyPhone
+                    },
+                    financials: {
+                        earnest_money: formData.earnestMoney,
+                        net_proceeds: formData.netProceeds
+                    },
+                    dates: {
+                        contract_date: formData.contractDate,
+                        closing_date: formData.closingDate
+                    }
+                }
+            };
+
+            await axios.post('http://127.0.0.1:8000/api/admin/transactions', payload, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            });
+
             navigate('/admin/asset-transactions');
-        }, 500);
+        } catch (error: any) {
+            console.error('Error creating transaction:', error);
+            if (error.response && error.response.data && error.response.data.errors) {
+                const backendErrors = error.response.data.errors;
+                const frontendErrors: Record<string, string[]> = {};
+                
+                // Map backend fields to frontend fields
+                const fieldMap: Record<string, string> = {
+                    'amount': 'price',
+                    'property_id': 'assetId',
+                    'description': 'notes',
+                    // Add other mappings if necessary
+                };
+
+                Object.keys(backendErrors).forEach(key => {
+                    const frontendKey = fieldMap[key] || key;
+                    frontendErrors[frontendKey] = backendErrors[key];
+                });
+                
+                setErrors(frontendErrors);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            } else {
+                setGeneralError(`Failed to create transaction: ${error.response?.data?.message || error.message || 'Unknown error'}`);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
     };
 
     return (
@@ -76,6 +208,12 @@ export default function CreateTransaction() {
                     </div>
                 </div>
 
+                {generalError && (
+                    <div style={{ padding: '12px', backgroundColor: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, color: '#B91C1C', marginBottom: 24, fontSize: 14 }}>
+                        {generalError}
+                    </div>
+                )}
+
                 <form onSubmit={handleSubmit} style={{ display: 'grid', gap: 24 }}>
                     {/* 1. Transaction Type & Asset */}
                     <div style={{ backgroundColor: '#FFFFFF', borderRadius: 12, border: '1px solid #E2E8F0', padding: isMobile ? 16 : 24 }}>
@@ -90,10 +228,11 @@ export default function CreateTransaction() {
                                     name="type"
                                     value={formData.type}
                                     onChange={handleChange}
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('type')}
                                 >
                                     {TRANSACTION_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
+                                {renderError('type')}
                             </div>
                             <div style={{ display: 'grid', gap: 6 }}>
                                 <label style={{ fontSize: 13, fontWeight: 500, color: '#475569' }}>Status</label>
@@ -101,10 +240,11 @@ export default function CreateTransaction() {
                                     name="status"
                                     value={formData.status}
                                     onChange={handleChange}
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('status')}
                                 >
                                     {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                                 </select>
+                                {renderError('status')}
                             </div>
                             <div style={{ display: 'grid', gap: 6, gridColumn: isMobile ? 'span 1' : 'span 2' }}>
                                 <label style={{ fontSize: 13, fontWeight: 500, color: '#475569' }}>Select Property / Asset</label>
@@ -112,14 +252,19 @@ export default function CreateTransaction() {
                                     name="assetId"
                                     value={formData.assetId}
                                     onChange={handleChange}
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('assetId')}
                                     required
                                 >
                                     <option value="">Select a property...</option>
-                                    {ASSETS.map(asset => (
-                                        <option key={asset.id} value={asset.id}>{asset.address} ({asset.id})</option>
-                                    ))}
+                                    {loading ? (
+                                        <option disabled>Loading properties...</option>
+                                    ) : (
+                                        assets.map(asset => (
+                                            <option key={asset.id} value={asset.id}>{asset.address}</option>
+                                        ))
+                                    )}
                                 </select>
+                                {renderError('assetId')}
                             </div>
                         </div>
                     </div>
@@ -139,9 +284,10 @@ export default function CreateTransaction() {
                                     value={formData.counterpartyName}
                                     onChange={handleChange}
                                     placeholder="e.g. John Smith or Sunshine Homes LLC"
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('counterpartyName')}
                                     required
                                 />
+                                {renderError('counterpartyName')}
                             </div>
                             <div style={{ display: 'grid', gap: 6 }}>
                                 <label style={{ fontSize: 13, fontWeight: 500, color: '#475569' }}>Role</label>
@@ -149,13 +295,14 @@ export default function CreateTransaction() {
                                     name="counterpartyRole"
                                     value={formData.counterpartyRole}
                                     onChange={handleChange}
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('counterpartyRole')}
                                 >
                                     <option value="Buyer">Buyer</option>
                                     <option value="Seller">Seller</option>
                                     <option value="Tenant">Tenant</option>
                                     <option value="Agent">Agent</option>
                                 </select>
+                                {renderError('counterpartyRole')}
                             </div>
                             <div style={{ display: 'grid', gap: 6 }}>
                                 <label style={{ fontSize: 13, fontWeight: 500, color: '#475569' }}>Email</label>
@@ -165,8 +312,9 @@ export default function CreateTransaction() {
                                     value={formData.counterpartyEmail}
                                     onChange={handleChange}
                                     placeholder="name@example.com"
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('counterpartyEmail')}
                                 />
+                                {renderError('counterpartyEmail')}
                             </div>
                             <div style={{ display: 'grid', gap: 6 }}>
                                 <label style={{ fontSize: 13, fontWeight: 500, color: '#475569' }}>Phone</label>
@@ -176,8 +324,9 @@ export default function CreateTransaction() {
                                     value={formData.counterpartyPhone}
                                     onChange={handleChange}
                                     placeholder="(555) 123-4567"
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('counterpartyPhone')}
                                 />
+                                {renderError('counterpartyPhone')}
                             </div>
                         </div>
                     </div>
@@ -197,9 +346,10 @@ export default function CreateTransaction() {
                                     value={formData.price}
                                     onChange={handleChange}
                                     placeholder="$0.00"
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('price')}
                                     required
                                 />
+                                {renderError('price')}
                             </div>
                             <div style={{ display: 'grid', gap: 6 }}>
                                 <label style={{ fontSize: 13, fontWeight: 500, color: '#475569' }}>Earnest Money</label>
@@ -209,8 +359,9 @@ export default function CreateTransaction() {
                                     value={formData.earnestMoney}
                                     onChange={handleChange}
                                     placeholder="$0.00"
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('earnestMoney')}
                                 />
+                                {renderError('earnestMoney')}
                             </div>
                             <div style={{ display: 'grid', gap: 6 }}>
                                 <label style={{ fontSize: 13, fontWeight: 500, color: '#475569' }}>Est. Net Proceeds</label>
@@ -220,8 +371,9 @@ export default function CreateTransaction() {
                                     value={formData.netProceeds}
                                     onChange={handleChange}
                                     placeholder="$0.00"
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('netProceeds')}
                                 />
+                                {renderError('netProceeds')}
                             </div>
                             <div style={{ display: 'grid', gap: 6 }}>
                                 <label style={{ fontSize: 13, fontWeight: 500, color: '#475569' }}>Effective / Contract Date</label>
@@ -230,9 +382,10 @@ export default function CreateTransaction() {
                                     name="contractDate"
                                     value={formData.contractDate}
                                     onChange={handleChange}
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('contractDate')}
                                     required
                                 />
+                                {renderError('contractDate')}
                             </div>
                             <div style={{ display: 'grid', gap: 6 }}>
                                 <label style={{ fontSize: 13, fontWeight: 500, color: '#475569' }}>Closing Date</label>
@@ -241,9 +394,25 @@ export default function CreateTransaction() {
                                     name="closingDate"
                                     value={formData.closingDate}
                                     onChange={handleChange}
-                                    style={{ padding: '10px', borderRadius: 6, border: '1px solid #CBD5E1', fontSize: isMobile ? 16 : 14 }}
+                                    style={getInputStyle('closingDate')}
                                 />
+                                {renderError('closingDate')}
                             </div>
+                        </div>
+                        
+                        <div style={{ marginTop: 20 }}>
+                            <label style={{ fontSize: 13, fontWeight: 500, color: '#475569', display: 'block', marginBottom: 6 }}>Notes</label>
+                            <textarea
+                                name="notes"
+                                value={formData.notes}
+                                onChange={handleChange}
+                                placeholder="Additional transaction details..."
+                                style={{ 
+                                    ...getInputStyle('notes'),
+                                    minHeight: '80px'
+                                }}
+                            />
+                            {renderError('notes')}
                         </div>
                     </div>
 

@@ -14,6 +14,8 @@ class DataImport extends Model
 
     protected $fillable = [
         'type',
+        'name',
+        'description',
         'file_path',
         'status',
         'total_rows',

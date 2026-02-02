@@ -98,6 +98,7 @@ export default function AdminNav() {
     ],
     'Operations': [
       { label: 'Surplus Funds', path: '/admin/operations/surplus-funds-research' },
+      { label: 'Share Admin', path: '/admin/operations/shares' },
       { label: 'Tax Appeal', path: '/admin/operations/property-tax-appeal' },
       { label: 'Expense & Share', path: '/admin/operations/expense-input-allocation' },
       { label: 'Time Tracking', path: '/admin/operations/time-tracking' },

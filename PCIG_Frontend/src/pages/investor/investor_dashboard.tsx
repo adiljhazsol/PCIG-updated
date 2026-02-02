@@ -9,7 +9,8 @@ import {
   Percent,
   Eye,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  X
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
@@ -58,6 +59,7 @@ interface FundInvestment {
   id: number;
   name: string;
   details: string;
+  image_url?: string;
   currentValue: string;
   returns: string;
   returnsColor: string;
@@ -99,40 +101,67 @@ export default function InvestorDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
+  
+  const [showDepositModal, setShowDepositModal] = useState(false);
+  const [depositAmount, setDepositAmount] = useState('');
+  const [depositMethod, setDepositMethod] = useState('Wire Transfer');
+  const [isDepositing, setIsDepositing] = useState(false);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
-        const response = await api.get('/investor/dashboard-data');
-        if (response.data.success) {
-          const data = response.data.data;
-          setDashboardData(data);
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true);
+      const response = await api.get('/investor/dashboard-data');
+      if (response.data.success) {
+        const data = response.data.data;
+        setDashboardData(data);
+        
+        // Extract unique years from depreciation breakdown and sort descending
+        if (data.depreciation_breakdown && data.depreciation_breakdown.length > 0) {
+          const years = Array.from(new Set(data.depreciation_breakdown.map((item: any) => item.year)))
+            .sort((a: any, b: any) => b - a) as string[];
           
-          // Extract unique years from depreciation breakdown and sort descending
-          if (data.depreciation_breakdown && data.depreciation_breakdown.length > 0) {
-            const years = Array.from(new Set(data.depreciation_breakdown.map((item: any) => item.year)))
-              .sort((a: any, b: any) => b - a) as string[];
-            
-            if (years.length > 0) {
-              setAvailableYears(years);
-              // Set active tab to most recent year if current active tab is not in list
-              if (!years.includes(activeDepreciationTab)) {
-                setActiveDepreciationTab(years[0]);
-              }
+          if (years.length > 0) {
+            setAvailableYears(years);
+            // Set active tab to most recent year if current active tab is not in list
+            if (!years.includes(activeDepreciationTab)) {
+              setActiveDepreciationTab(years[0]);
             }
           }
-        } else {
-          setError('Failed to load dashboard data');
         }
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-        setError('Failed to load dashboard data. Please try again.');
-      } finally {
-        setLoading(false);
+      } else {
+        setError('Failed to load dashboard data');
       }
-    };
+    } catch (err) {
+      console.error('Error fetching dashboard data:', err);
+      setError('Failed to load dashboard data. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
+  const handleDeposit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      setIsDepositing(true);
+      await api.post('/investor/transactions/deposit', {
+        amount: parseFloat(depositAmount),
+        method: depositMethod
+      });
+      
+      // Refresh data
+      await fetchDashboardData();
+      setShowDepositModal(false);
+      setDepositAmount('');
+      alert('Deposit successful!');
+    } catch (err: any) {
+      console.error('Deposit failed:', err);
+      alert('Failed to deposit: ' + (err.response?.data?.message || err.message));
+    } finally {
+      setIsDepositing(false);
+    }
+  };
+
+  useEffect(() => {
     fetchDashboardData();
   }, []);
 
@@ -436,6 +465,22 @@ export default function InvestorDashboard() {
                   border: '1px solid #E2E8F0'
                 }}
               >
+                {fund.image_url && (
+                  <div style={{
+                    height: '120px',
+                    width: '100%',
+                    backgroundColor: '#e2e8f0',
+                    borderRadius: '6px',
+                    overflow: 'hidden',
+                    marginBottom: '12px'
+                  }}>
+                    <img
+                      src={fund.image_url}
+                      alt={fund.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
+                  </div>
+                )}
                 <div style={{ marginBottom: `clamp(6px, 1vh, 8px)` }}>
                   <div style={{ fontSize: `clamp(12px, 1.3vw, 14px)`, fontWeight: 600, color: '#0F172A', marginBottom: `clamp(3px, 0.5vh, 4px)`, lineHeight: 1.3, wordBreak: 'break-word' }}>{fund.name}</div>
                   <div style={{ fontSize: `clamp(10px, 1.1vw, 12px)`, color: '#64748B', lineHeight: 1.3 }}>{fund.details}</div>
@@ -505,7 +550,7 @@ export default function InvestorDashboard() {
                 {isMobile ? 'Reports' : 'View Reports'}
               </button>
               <button 
-                onClick={() => navigate('/investor/deposit')}
+                onClick={() => setShowDepositModal(true)}
                 style={{
                 backgroundColor: '#1E3A5F',
                 color: '#FFFFFF',
@@ -590,29 +635,31 @@ export default function InvestorDashboard() {
                   <p style={{ fontSize: `clamp(10px, 1.1vw, 12px)`, color: '#64748B', margin: 0, lineHeight: 1.4 }}>{staticContent.depreciationBreakdown.subtitle}</p>
                 </div>
 
-                {/* Tabs */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: `clamp(6px, 1vw, 8px)`, marginBottom: `clamp(16px, 2vh, 20px)`, borderBottom: '1px solid #E2E8F0', overflowX: 'auto', flexWrap: 'nowrap' }}>
-                  {availableYears.map((tab) => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveDepreciationTab(tab)}
-                      style={{
-                        fontSize: `clamp(12px, 1.3vw, 14px)`,
-                        fontWeight: activeDepreciationTab === tab ? 600 : 500,
-                        color: activeDepreciationTab === tab ? '#1E3A5F' : '#64748B',
-                        backgroundColor: 'transparent',
-                        border: 'none',
-                        borderBottom: activeDepreciationTab === tab ? '2px solid #1E3A5F' : 'none',
-                        padding: `clamp(6px, 1vh, 8px) clamp(12px, 1.5vw, 16px) ${activeDepreciationTab === tab ? 'clamp(6px, 1vh, 8px) 0' : 'clamp(6px, 1vh, 8px) clamp(12px, 1.5vw, 16px)'} `,
-                        cursor: 'pointer',
-                        marginBottom: activeDepreciationTab === tab ? '-1px' : '0',
-                        whiteSpace: 'nowrap',
-                        flexShrink: 0
-                      }}
-                    >
-                      {tab}
-                    </button>
-                  ))}
+                {/* Year Dropdown */}
+                <div style={{ marginBottom: `clamp(16px, 2vh, 20px)` }}>
+                  <select
+                    value={activeDepreciationTab}
+                    onChange={(e) => setActiveDepreciationTab(e.target.value)}
+                    style={{
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      border: '1px solid #E2E8F0',
+                      backgroundColor: '#FFFFFF',
+                      color: '#0F172A',
+                      fontSize: '14px',
+                      fontWeight: 500,
+                      cursor: 'pointer',
+                      outline: 'none',
+                      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)',
+                      minWidth: '120px'
+                    }}
+                  >
+                    {availableYears.map((year) => (
+                      <option key={year} value={year}>
+                        {year}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 {/* Table */}
@@ -708,6 +755,132 @@ export default function InvestorDashboard() {
 
         </div>
       </div>
+
+      {/* Deposit Modal */}
+      {showDepositModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            padding: '24px',
+            width: '100%',
+            maxWidth: '400px',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '18px', fontWeight: 600, color: '#1F2937', margin: 0 }}>Make a Deposit</h2>
+              <button 
+                onClick={() => setShowDepositModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: '#6B7280' }}
+              >
+                <X size={24} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleDeposit}>
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '8px' }}>
+                  Amount ($)
+                </label>
+                <input
+                  type="number"
+                  required
+                  min="10"
+                  step="0.01"
+                  value={depositAmount}
+                  onChange={(e) => setDepositAmount(e.target.value)}
+                  placeholder="Enter amount"
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid #D1D5DB',
+                    fontSize: '14px',
+                    boxSizing: 'border-box'
+                  }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#374151', marginBottom: '8px' }}>
+                  Payment Method
+                </label>
+                <select
+                  value={depositMethod}
+                  onChange={(e) => setDepositMethod(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: '6px',
+                    border: '1px solid #D1D5DB',
+                    fontSize: '14px',
+                    backgroundColor: 'white',
+                    boxSizing: 'border-box'
+                  }}
+                >
+                  <option value="Wire Transfer">Wire Transfer</option>
+                  <option value="ACH">ACH Transfer</option>
+                  <option value="Check">Check</option>
+                </select>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setShowDepositModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: '6px',
+                    border: '1px solid #D1D5DB',
+                    backgroundColor: 'white',
+                    color: '#374151',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isDepositing}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: '6px',
+                    border: 'none',
+                    backgroundColor: '#1E3A5F',
+                    color: 'white',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    cursor: isDepositing ? 'not-allowed' : 'pointer',
+                    opacity: isDepositing ? 0.7 : 1,
+                    display: 'flex',
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}
+                >
+                  {isDepositing && <Loader2 className="animate-spin" size={16} />}
+                  {isDepositing ? 'Processing...' : 'Confirm Deposit'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

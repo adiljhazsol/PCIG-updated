@@ -8,7 +8,8 @@ import {
   FileDown,
   Share2,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  X
 } from 'lucide-react';
 import AdminNav from '../../components/admin/AdminNav';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
@@ -32,6 +33,7 @@ export default function FundAdmin() {
   // Define interfaces for type safety
   interface Fund {
     id: string;
+    db_id?: number;
     name: string;
     strategy: string;
     strategyColor: string;
@@ -69,6 +71,54 @@ export default function FundAdmin() {
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [strategyFilter, setStrategyFilter] = useState('All');
+
+  // Edit Modal State
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    status: '',
+    performance_metric: ''
+  });
+
+  const handleEditClick = () => {
+    // Map display status to backend status
+    let statusValue = 'coming_soon';
+    if (fundDetails.status === 'Active' || fundDetails.status === 'Open') statusValue = 'open';
+    else if (fundDetails.status === 'Closed') statusValue = 'closed';
+    else if (fundDetails.status === 'Coming_soon' || fundDetails.status === 'Coming Soon') statusValue = 'coming_soon';
+    
+    // Parse performance metric (remove % and +)
+    let perfValue = '';
+    if (fundDetails.fundPerformance && fundDetails.fundPerformance.currentIRR) {
+        const raw = fundDetails.fundPerformance.currentIRR.replace('%', '').replace('+', '').replace('N/A', '');
+        perfValue = raw.trim();
+    }
+
+    setEditForm({
+      status: statusValue,
+      performance_metric: perfValue
+    });
+    setEditModalOpen(true);
+  };
+
+  const handleSaveFund = async () => {
+    try {
+      setLoading(true);
+      const idToUpdate = fundDetails.db_id || selectedFundId;
+      await api.put(`/admin/funds/${idToUpdate}`, {
+        status: editForm.status,
+        performance_metric: editForm.performance_metric
+      });
+      
+      await fetchData();
+      setEditModalOpen(false);
+    } catch (err) {
+      console.error('Error updating fund:', err);
+      alert('Failed to update fund. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const fetchData = async () => {
     try {
@@ -110,6 +160,81 @@ export default function FundAdmin() {
   const tableHeaders = fundData?.tableHeaders || [];
   const funds = fundData?.funds || [];
 
+  const handleGenerateReports = async () => {
+    try {
+      const response = await api.post('/admin/funds/reports');
+      alert(response.data.message);
+    } catch (error) {
+      console.error('Error generating reports:', error);
+      alert('Failed to generate reports');
+    }
+  };
+
+  const handleRecordContribution = async () => {
+    if (!selectedFundId) return;
+    const amount = prompt('Enter contribution amount:');
+    if (!amount) return;
+    
+    // Default date to today
+    const date = new Date().toISOString().split('T')[0];
+    
+    try {
+      const response = await api.post(`/admin/funds/${selectedFundId}/contributions`, {
+        amount: parseFloat(amount),
+        date: date
+      });
+      alert(response.data.message);
+      fetchData();
+    } catch (error) {
+      console.error('Error recording contribution:', error);
+      alert('Failed to record contribution');
+    }
+  };
+
+  const handleDistributeProfits = async () => {
+    if (!selectedFundId) return;
+    const amount = prompt('Enter distribution amount:');
+    if (!amount) return;
+    
+    const type = prompt('Enter distribution type (dividend, interest, etc.):', 'dividend');
+    if (!type) return;
+
+    const date = new Date().toISOString().split('T')[0];
+
+    try {
+      const response = await api.post(`/admin/funds/${selectedFundId}/distributions`, {
+        amount: parseFloat(amount),
+        type,
+        date
+      });
+      alert(response.data.message);
+      fetchData();
+    } catch (error) {
+      console.error('Error distributing profits:', error);
+      alert('Failed to distribute profits');
+    }
+  };
+
+  const handleDownloadK1 = async () => {
+    if (!selectedFundId) return;
+    try {
+      const response = await api.get(`/admin/funds/${selectedFundId}/k1-package`, {
+        responseType: 'blob'
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `k1-package-${selectedFundId}.txt`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (error) {
+      console.error('Error downloading K-1 package:', error);
+      alert('Failed to download K-1 package');
+    }
+  };
+
   // Find the selected fund from the funds list
   const fundDetails = React.useMemo(() => {
     const found = funds.find((f: any) => f.id === selectedFundId) || funds[0];
@@ -137,6 +262,24 @@ export default function FundAdmin() {
         minInvestment: '',
         lockUp: '',
         strategy: ''
+      },
+      taxDocuments: {
+        year: '',
+        k1sGenerated: 0,
+        k1sTotal: 0,
+        status: '',
+        statusColor: ''
+      },
+      accountingSnapshot: {
+        totalAssets: '',
+        cashOnHand: '',
+        netIncomeYTD: '',
+        netIncomeColor: ''
+      },
+      depreciationAllocation: {
+        annualDepreciation: '',
+        method: '',
+        note: ''
       }
     };
   }, [funds, selectedFundId]);
@@ -251,6 +394,7 @@ export default function FundAdmin() {
               }}
             >
               <button
+                onClick={handleGenerateReports}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -415,6 +559,8 @@ export default function FundAdmin() {
                   onChange={(e) => {
                     if (filter.label === 'Status') {
                       setStatusFilter(e.target.value);
+                    } else if (filter.label === 'Strategy') {
+                      setStrategyFilter(e.target.value);
                     }
                   }}
                 >
@@ -475,12 +621,12 @@ export default function FundAdmin() {
                       const matchesSearch = fund.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                         fund.id.toLowerCase().includes(searchTerm.toLowerCase());
                       // Basic mapping for "All Statuses" or specific status
-                      // The JSON uses "All Statuses" as default selected, which we map to 'All' logic
-                      // If the dropdown value is strictly a status, we match it.
-                      // Note: admin.json might have "All Statuses" as the toggle label.
                       const matchesStatus = statusFilter === 'All Statuses' || statusFilter === 'All' || fund.status === statusFilter;
+                      
+                      // Strategy filter
+                      const matchesStrategy = strategyFilter === 'All Strategies' || strategyFilter === 'All' || fund.strategy === strategyFilter;
 
-                      return matchesSearch && matchesStatus;
+                      return matchesSearch && matchesStatus && matchesStrategy;
                     }).map((fund: Fund) => {
                       const isSelected = fund.id === selectedFundId;
                       return (
@@ -647,6 +793,7 @@ export default function FundAdmin() {
                 </span>
               </div>
               <button
+                onClick={handleEditClick}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -842,6 +989,7 @@ export default function FundAdmin() {
               }}
             >
               <button
+                onClick={handleRecordContribution}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -862,6 +1010,7 @@ export default function FundAdmin() {
                 Record Contribution
               </button>
               <button
+                onClick={handleDistributeProfits}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -945,6 +1094,7 @@ export default function FundAdmin() {
                 Status: {fundDetails.taxDocuments.status}
               </div>
               <button
+                onClick={handleDownloadK1}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1055,6 +1205,116 @@ export default function FundAdmin() {
           </div>
         </div>
       </div>
+      {/* Edit Fund Modal */}
+      {editModalOpen && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 12,
+            padding: 24,
+            width: '100%',
+            maxWidth: 400,
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h3 style={{ fontSize: 18, fontWeight: 600, color: '#0F172A', margin: 0 }}>Edit Fund</h3>
+              <button onClick={() => setEditModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Status</label>
+                <select
+                  value={editForm.status}
+                  onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    color: '#0F172A',
+                    outline: 'none'
+                  }}
+                >
+                  <option value="coming_soon">Coming Soon</option>
+                  <option value="open">Open</option>
+                  <option value="closed">Closed</option>
+                  <option value="fully_subscribed">Fully Subscribed</option>
+                  <option value="liquidating">Liquidating</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Performance Metric (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  placeholder="e.g. 12.5"
+                  value={editForm.performance_metric}
+                  onChange={(e) => setEditForm({ ...editForm, performance_metric: e.target.value })}
+                  style={{
+                    width: '100%',
+                    padding: '8px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    fontSize: 14,
+                    color: '#0F172A',
+                    outline: 'none'
+                  }}
+                />
+                <p style={{ fontSize: 12, color: '#64748B', marginTop: 4 }}>Set value to fix N/A in table.</p>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+                <button
+                  onClick={() => setEditModalOpen(false)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: 6,
+                    border: '1px solid #E2E8F0',
+                    backgroundColor: '#FFFFFF',
+                    color: '#64748B',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveFund}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: 6,
+                    border: 'none',
+                    backgroundColor: '#1D4ED8',
+                    color: '#FFFFFF',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

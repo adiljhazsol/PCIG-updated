@@ -11,20 +11,22 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('reo_properties', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('property_id')->constrained()->cascadeOnDelete();
-            $table->date('acquisition_date')->nullable();
-            $table->enum('disposition_strategy', ['sale', 'lease', 'hold'])->default('sale')->index();
-            $table->decimal('listed_price', 10, 2)->nullable();
-            $table->enum('status', ['marketing', 'offer_accepted', 'sold', 'leased'])->default('marketing')->index();
-            $table->string('listing_agent')->nullable();
-            $table->date('listing_date')->nullable();
-            $table->text('notes')->nullable();
-            $table->timestamps();
+        if (!Schema::hasTable('reo_properties')) {
+            Schema::create('reo_properties', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('property_id')->constrained()->cascadeOnDelete();
+                $table->date('acquisition_date')->nullable();
+                $table->enum('disposition_strategy', ['sale', 'lease', 'hold'])->default('sale')->index();
+                $table->decimal('listed_price', 10, 2)->nullable();
+                $table->enum('status', ['marketing', 'offer_accepted', 'sold', 'leased'])->default('marketing')->index();
+                $table->string('listing_agent')->nullable();
+                $table->date('listing_date')->nullable();
+                $table->text('notes')->nullable();
+                $table->timestamps();
 
-            $table->index(['property_id', 'status']);
-        });
+                $table->index(['property_id', 'status']);
+            });
+        }
     }
 
     /**

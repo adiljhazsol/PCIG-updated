@@ -15,6 +15,7 @@ class RedemptionTracking extends Model
         'status',
         'redeemed_at',
         'redemption_amount',
+        'payment_method',
         'notes',
     ];
 

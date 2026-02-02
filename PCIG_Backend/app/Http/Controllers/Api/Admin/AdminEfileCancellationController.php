@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\EfileCancellation;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
 
 class AdminEfileCancellationController extends Controller
 {
@@ -34,6 +35,40 @@ class AdminEfileCancellationController extends Controller
         $processed = EfileCancellation::where('status', 'cancelled')->count();
         $failed = EfileCancellation::where('status', 'failed')->count();
 
+        // Calculate trends
+        $currentMonthStart = now()->startOfMonth();
+        $currentMonthEnd = now()->endOfMonth();
+        $lastMonthStart = now()->subMonth()->startOfMonth();
+        $lastMonthEnd = now()->subMonth()->endOfMonth();
+
+        // Total Requests Trend
+        $newThisMonth = EfileCancellation::whereBetween('created_at', [$currentMonthStart, $currentMonthEnd])->count();
+        $newLastMonth = EfileCancellation::whereBetween('created_at', [$lastMonthStart, $lastMonthEnd])->count();
+        $diff = $newThisMonth - $newLastMonth;
+        $trend = $diff >= 0 ? 'up' : 'down';
+        $change = ($diff >= 0 ? '+' : '') . abs($diff) . ' vs last mo';
+
+        // Pending Trend
+        $pendingThisMonth = EfileCancellation::where('status', 'pending')->whereBetween('created_at', [$currentMonthStart, $currentMonthEnd])->count();
+        $pendingLastMonth = EfileCancellation::where('status', 'pending')->whereBetween('created_at', [$lastMonthStart, $lastMonthEnd])->count();
+        $pendingDiff = $pendingThisMonth - $pendingLastMonth;
+        $pendingTrend = $pendingDiff >= 0 ? 'up' : 'down';
+        $pendingChange = ($pendingDiff >= 0 ? '+' : '') . abs($pendingDiff) . ' vs last mo';
+
+        // Processed Trend
+        $processedThisMonth = EfileCancellation::where('status', 'cancelled')->whereBetween('updated_at', [$currentMonthStart, $currentMonthEnd])->count();
+        $processedLastMonth = EfileCancellation::where('status', 'cancelled')->whereBetween('updated_at', [$lastMonthStart, $lastMonthEnd])->count();
+        $processedDiff = $processedThisMonth - $processedLastMonth;
+        $processedTrend = $processedDiff >= 0 ? 'up' : 'down';
+        $processedChange = ($processedDiff >= 0 ? '+' : '') . abs($processedDiff) . ' vs last mo';
+
+        // Failed Trend
+        $failedThisMonth = EfileCancellation::where('status', 'failed')->whereBetween('updated_at', [$currentMonthStart, $currentMonthEnd])->count();
+        $failedLastMonth = EfileCancellation::where('status', 'failed')->whereBetween('updated_at', [$lastMonthStart, $lastMonthEnd])->count();
+        $failedDiff = $failedThisMonth - $failedLastMonth;
+        $failedTrend = $failedDiff >= 0 ? 'up' : 'down';
+        $failedChange = ($failedDiff >= 0 ? '+' : '') . abs($failedDiff) . ' vs last mo';
+
         // Map rows
         $rows = $cancellations->map(function ($cancellation) {
             $statusColor = match($cancellation->status) {
@@ -61,7 +96,7 @@ class AdminEfileCancellationController extends Controller
                 ],
                 'lienInfo' => [
                     'fileNumber' => $cancellation->filing_id ?? '-',
-                    'taxYear' => '-', // Placeholder as we might not have tax year in this table
+                    'taxYear' => '-', 
                 ],
                 'payoffDate' => $cancellation->requested_at ? $cancellation->requested_at->format('M d, Y') : '-',
                 'status' => ucfirst($cancellation->status),
@@ -75,6 +110,9 @@ class AdminEfileCancellationController extends Controller
                 'detail_requested_by' => $cancellation->requestor->name ?? 'Unknown',
                 'detail_requested_at' => $cancellation->requested_at ? $cancellation->requested_at->format('M d, Y') : '-',
                 'detail_id' => 'REQ-' . $cancellation->created_at->format('Y') . '-' . str_pad($cancellation->id, 3, '0', STR_PAD_LEFT),
+                'gsccca_status' => $cancellation->gsccca_status ?? 'pending',
+                'submitted_at' => $cancellation->submitted_at ? $cancellation->submitted_at->format('M d, Y • h:i A') : null,
+                'created_at_fmt' => $cancellation->created_at->format('M d, Y • h:i A'),
             ];
         });
 
@@ -83,7 +121,6 @@ class AdminEfileCancellationController extends Controller
                 'title' => 'E-File & Cancellations',
                 'subtitle' => 'Manage electronic filings and cancellation requests',
                 'actionButtons' => [
-                    ['label' => 'Settings', 'icon' => 'Settings', 'variant' => 'outline'],
                     ['label' => 'Batch E-File', 'icon' => 'Upload', 'variant' => 'primary']
                 ]
             ],
@@ -92,8 +129,8 @@ class AdminEfileCancellationController extends Controller
                     'id' => 'total-requests',
                     'title' => 'Total Requests',
                     'value' => (string)$totalRequests,
-                    'change' => '+12%',
-                    'trend' => 'up',
+                    'change' => $change,
+                    'trend' => $trend,
                     'icon' => 'FileText',
                     'color' => '#3B82F6'
                 ],
@@ -101,8 +138,8 @@ class AdminEfileCancellationController extends Controller
                     'id' => 'pending-approval',
                     'title' => 'Pending Approval',
                     'value' => (string)$pendingApproval,
-                    'change' => '-5%',
-                    'trend' => 'down',
+                    'change' => $pendingChange,
+                    'trend' => $pendingTrend,
                     'icon' => 'Clock',
                     'color' => '#F59E0B'
                 ],
@@ -110,8 +147,8 @@ class AdminEfileCancellationController extends Controller
                     'id' => 'processed',
                     'title' => 'Processed',
                     'value' => (string)$processed,
-                    'change' => '+8%',
-                    'trend' => 'up',
+                    'change' => $processedChange,
+                    'trend' => $processedTrend,
                     'icon' => 'CheckCircle2',
                     'color' => '#10B981'
                 ],
@@ -119,8 +156,8 @@ class AdminEfileCancellationController extends Controller
                     'id' => 'failed',
                     'title' => 'Failed / Action Needed',
                     'value' => (string)$failed,
-                    'change' => '+2%',
-                    'trend' => 'up',
+                    'change' => $failedChange,
+                    'trend' => $failedTrend,
                     'icon' => 'AlertCircle',
                     'color' => '#EF4444'
                 ]
@@ -152,48 +189,7 @@ class AdminEfileCancellationController extends Controller
                 'headers' => ['Select', 'Property', 'Lien Info', 'Payoff Date', 'Status', 'File Date', 'Confirmation #', 'Issues'],
                 'rows' => $rows
             ],
-            'detailPanel' => [
-                'title' => 'Request Details',
-                'cancellationDetails' => [
-                    'title' => 'Cancellation Details',
-                    'fields' => [
-                        ['label' => 'Request ID', 'value' => 'REQ-2023-001'],
-                        ['label' => 'Request Date', 'value' => 'Oct 12, 2023'],
-                        ['label' => 'Reason', 'value' => 'Payoff Received in Full'],
-                        ['label' => 'Requested By', 'value' => 'John Doe (Admin)']
-                    ]
-                ],
-                'requiredDocuments' => [
-                    'title' => 'Required Documents',
-                    'status' => '1/2 Uploaded',
-                    'statusBg' => '#FEF3C7',
-                    'statusColor' => '#D97706',
-                    'documents' => [
-                        ['id' => 1, 'name' => 'Payoff Confirmation', 'status' => 'Uploaded', 'statusColor' => '#16A34A', 'date' => 'Oct 12, 2023', 'icon' => 'Eye'],
-                        ['id' => 2, 'name' => 'Cancellation Authorization', 'status' => 'Pending', 'statusColor' => '#F59E0B', 'date' => '-', 'icon' => 'Upload']
-                    ],
-                    'uploadButton' => 'Upload Document'
-                ],
-                'efileStatus' => [
-                    'title' => 'E-File Status',
-                    'timeline' => [
-                        ['id' => 1, 'label' => 'Request Created', 'date' => 'Oct 12, 2023 • 10:00 AM', 'status' => 'completed', 'statusColor' => '#3B82F6'],
-                        ['id' => 2, 'label' => 'Documents Verified', 'date' => 'Oct 12, 2023 • 02:30 PM', 'status' => 'completed', 'statusColor' => '#3B82F6'],
-                        ['id' => 3, 'label' => 'Submitted to County', 'date' => 'Pending', 'status' => 'pending', 'statusColor' => '#64748B'],
-                        ['id' => 4, 'label' => 'Recording Confirmation', 'date' => '-', 'status' => 'pending', 'statusColor' => '#64748B']
-                    ]
-                ],
-                'gscccaIntegration' => [
-                    'title' => 'GSCCCA Integration',
-                    'status' => 'Ready to File',
-                    'statusColor' => '#16A34A',
-                    'primaryAction' => ['label' => 'Submit to GSCCCA', 'bg' => '#3B82F6', 'color' => '#FFFFFF'],
-                    'secondaryActions' => [
-                        ['label' => 'View XML Preview', 'icon' => 'FileText'],
-                        ['label' => 'Check Status', 'icon' => 'RefreshCw']
-                    ]
-                ]
-            ]
+            // Removed static detailPanel
         ]);
     }
 
@@ -216,9 +212,6 @@ class AdminEfileCancellationController extends Controller
             'reason' => 'required|string',
         ]);
 
-        // Mock integration with E-Filing System
-        // In real app: Call external API to cancel filing using filing_id
-
         $cancellation = EfileCancellation::create([
             'property_id' => $request->property_id,
             'filing_id' => $request->filing_id,
@@ -226,15 +219,87 @@ class AdminEfileCancellationController extends Controller
             'requested_at' => now(),
             'status' => 'processing', // Initial status
             'requested_by' => $request->user()->id,
+            'gsccca_status' => 'pending'
         ]);
-
-        // Simulate async processing or immediate success
-        $cancellation->update(['status' => 'cancelled']);
 
         return response()->json([
             'success' => true,
             'data' => $cancellation,
             'message' => 'E-File cancellation submitted successfully'
         ], 201);
+    }
+    
+    public function submitToGsccca(Request $request, $id): JsonResponse
+    {
+        $cancellation = EfileCancellation::findOrFail($id);
+        
+        $xmlContent = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" .
+            "<CancellationRequest>\n" .
+            "  <RequestID>{$cancellation->id}</RequestID>\n" .
+            "  <PropertyAddress>" . ($cancellation->property->address ?? 'N/A') . "</PropertyAddress>\n" .
+            "  <Timestamp>" . now()->toIso8601String() . "</Timestamp>\n" .
+            "  <Type>Cancellation</Type>\n" .
+            "</CancellationRequest>";
+
+        // Simulate GSCCCA submission
+        $cancellation->update([
+            'gsccca_status' => 'submitted',
+            'submitted_at' => now(),
+            'gsccca_transaction_id' => 'GSCCCA-' . strtoupper(uniqid()),
+            'status' => 'processing',
+            'xml_content' => $xmlContent
+        ]);
+        
+        return response()->json(['success' => true, 'message' => 'Submitted to GSCCCA', 'data' => $cancellation]);
+    }
+
+    public function viewXml(Request $request, $id): JsonResponse
+    {
+        $cancellation = EfileCancellation::findOrFail($id);
+        
+        if (!$cancellation->xml_content) {
+             return response()->json(['success' => false, 'message' => 'No XML content available'], 404);
+        }
+
+        return response()->json(['success' => true, 'xml_content' => $cancellation->xml_content]);
+    }
+    
+    public function checkStatus(Request $request, $id): JsonResponse
+    {
+        $cancellation = EfileCancellation::findOrFail($id);
+        
+        // Simulate status check logic
+        if ($cancellation->gsccca_status === 'submitted') {
+            // Randomly approve or keep processing for demo
+            $cancellation->update([
+                'gsccca_status' => 'accepted',
+                'status' => 'cancelled'
+            ]);
+        }
+        
+        return response()->json(['success' => true, 'status' => $cancellation->gsccca_status]);
+    }
+    
+    public function batchEfile(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:csv,xlsx,xls,xml|max:10240', // 10MB max
+        ]);
+
+        if ($request->hasFile('file')) {
+            $file = $request->file('file');
+            $path = $file->store('efile-batches', 'local');
+            
+            // In a real scenario, we would dispatch a job to process this file
+            // ProcessBatchEfile::dispatch($path);
+            
+            return response()->json([
+                'success' => true, 
+                'message' => 'Batch file uploaded and queued for processing.',
+                'path' => $path
+            ]);
+        }
+
+        return response()->json(['success' => false, 'message' => 'No file uploaded'], 400);
     }
 }

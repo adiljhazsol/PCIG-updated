@@ -36,31 +36,106 @@ export default function K1Generation() {
     });
 
     const [adminData, setAdminData] = useState<any>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+    // Removed unused loading/error states
+    
+    const [generatedForms, setGeneratedForms] = useState<any[]>([]);
+    const [generating, setGenerating] = useState(false);
 
     useEffect(() => {
         const fetchData = async () => {
             try {
                 const response = await api.get('/admin/k1/dashboard-data');
                 setAdminData(response.data);
-                setLoading(false);
             } catch (err) {
                 console.error('Error fetching K1 data:', err);
-                setError('Failed to load data');
-                setLoading(false);
             }
         };
         fetchData();
     }, []);
 
+    useEffect(() => {
+        if (activeTab === 'Generated History') {
+            const fetchHistory = async () => {
+                try {
+                    const response = await api.get('/admin/k1/forms?year=2024');
+                    setGeneratedForms(response.data.data || []);
+                } catch (err) {
+                    console.error('Error fetching history:', err);
+                }
+            };
+            fetchHistory();
+        }
+    }, [activeTab]);
+
+    const handleGenerate = async () => {
+        setGenerating(true);
+        try {
+            await api.post('/admin/k1/generate', {
+                tax_year: 2024,
+                scope: generationScope.toLowerCase().replace(' ', '_')
+            });
+            // Refresh dashboard data
+            const response = await api.get('/admin/k1/dashboard-data');
+            setAdminData(response.data);
+            alert('K-1 Generation started successfully!');
+            setActiveTab('Generated History');
+        } catch (err: any) {
+            console.error('Error generating K-1s:', err);
+            const msg = err.response?.data?.message || err.message || 'Failed to start generation.';
+            alert(`Error: ${msg}`);
+        } finally {
+            setGenerating(false);
+        }
+    };
+
+    const handleDownload = async (id: string, name: string) => {
+        try {
+            const response = await api.get(`/admin/k1/download/${id}`, {
+                responseType: 'blob'
+            });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `${name}_K1_2024.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (err) {
+            console.error('Download failed:', err);
+            alert('Failed to download K-1.');
+        }
+    };
+
+    const handleView = async (id: string) => {
+        try {
+            const response = await api.get(`/admin/k1/view/${id}`, {
+                responseType: 'blob'
+            });
+            const url = window.URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }));
+            window.open(url, '_blank');
+        } catch (err) {
+            console.error('View failed:', err);
+            alert('Failed to view K-1.');
+        }
+    };
+
+    const handlePublish = async (id: string) => {
+        try {
+            await api.post('/admin/k1/publish', {
+                ids: [id]
+            });
+            alert('Sent to investor!');
+            const response = await api.get('/admin/k1/forms?year=2024');
+            setGeneratedForms(response.data.data || []);
+        } catch (err) {
+            console.error('Error publishing:', err);
+            alert('Failed to send.');
+        }
+    };
+
     // Safe data extraction
     const data = adminData?.k1Generation || {};
-    const header = data?.header || {
-        title: 'K-1 Generation',
-        subtitle: 'Generate and manage K-1 tax documents',
-        actionButtons: { generate: { label: 'Generate K-1s' }, export: { label: 'Export Report' } }
-    };
+    // Removed unused header
     
     const rawStats = Array.isArray(data?.stats) ? data.stats : [];
     const stats = rawStats.map((stat: any) => ({
@@ -70,6 +145,8 @@ export default function K1Generation() {
         icon: stat?.icon || 'Users',
         color: stat?.color || '#64748B'
     }));
+
+    const reviewCount = data?.tableData?.reviewCount || 0;
 
     const rawTableData = Array.isArray(data?.tableData?.rows) ? data.tableData.rows : (Array.isArray(data?.tableData) ? data.tableData : []);
     const tableData = rawTableData.map((row: any) => ({
@@ -147,7 +224,10 @@ export default function K1Generation() {
                             <Download size={16} />
                             {isMobile ? 'Export CSV' : 'Export Tax Data (CSV)'}
                         </button>
-                        <button style={{
+                        <button 
+                            onClick={() => handleGenerate()}
+                            disabled={generating}
+                            style={{
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -159,11 +239,12 @@ export default function K1Generation() {
                             fontSize: isMobile ? 13 : 14,
                             fontWeight: 500,
                             color: '#fff',
-                            cursor: 'pointer',
+                            cursor: generating ? 'not-allowed' : 'pointer',
+                            opacity: generating ? 0.7 : 1,
                             flex: isMobile ? '1 1 100%' : 'initial'
                         }}>
                             <Play size={16} />
-                            Generate All K-1s
+                            {generating ? 'Generating...' : 'Generate All K-1s'}
                         </button>
                     </div>
                 </div>
@@ -235,13 +316,14 @@ export default function K1Generation() {
                         >
                             {isMobile && tab === 'Generation & Settings' ? 'Settings' : tab}
                             {tab === 'Data Review' && (
-                                <span style={{ backgroundColor: '#FEF3C7', color: '#B45309', fontSize: 11, padding: '2px 6px', borderRadius: 10 }}>267</span>
+                                <span style={{ backgroundColor: '#FEF3C7', color: '#B45309', fontSize: 11, padding: '2px 6px', borderRadius: 10 }}>{reviewCount}</span>
                             )}
                         </button>
                     ))}
                 </div>
 
                 {/* Main Content Area */}
+                {activeTab === 'Generation & Settings' && (
                 <div style={{
                     display: 'grid',
                     gridTemplateColumns: isMobileOrTablet ? '1fr' : '300px 1fr',
@@ -370,20 +452,23 @@ export default function K1Generation() {
                             </div>
                         </div>
 
-                        <button style={{
+                        <button 
+                            onClick={() => handleGenerate()}
+                            disabled={generating}
+                            style={{
                             width: '100%',
                             maxWidth: '100%',
                             padding: '12px',
-                            backgroundColor: '#1E3A5F',
+                            backgroundColor: generating ? '#94A3B8' : '#1E3A5F',
                             color: '#fff',
                             border: 'none',
                             borderRadius: 6,
                             fontSize: 14,
                             fontWeight: 600,
-                            cursor: 'pointer',
+                            cursor: generating ? 'not-allowed' : 'pointer',
                             boxSizing: 'border-box'
                         }}>
-                            Generate K-1 Package
+                            {generating ? 'Generating...' : 'Generate K-1 Package'}
                         </button>
 
                     </div>
@@ -420,7 +505,9 @@ export default function K1Generation() {
                                         />
                                     </div>
                                     {!isMobile && (
-                                        <button style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 4, fontSize: 12, backgroundColor: '#fff', color: '#0F172A', cursor: 'pointer' }}>
+                                        <button 
+                                            onClick={() => setActiveTab('Data Review')}
+                                            style={{ padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 4, fontSize: 12, backgroundColor: '#fff', color: '#0F172A', cursor: 'pointer' }}>
                                             View Full Data
                                         </button>
                                     )}
@@ -520,6 +607,127 @@ export default function K1Generation() {
                     </div>
 
                 </div>
+                )}
+
+                {activeTab === 'Data Review' && (
+                    <div style={{ width: '100%' }}>
+                         <div style={{ backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, overflow: 'hidden', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+                            <div style={{ padding: 16, borderBottom: '1px solid #E2E8F0' }}>
+                                <h3 style={{ fontSize: 16, fontWeight: 600, color: '#0F172A', margin: 0 }}>Full Data Review</h3>
+                            </div>
+                            <div style={{ overflowX: 'auto' }}>
+                                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                    <thead>
+                                        <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#64748B' }}>Investor</th>
+                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#64748B' }}>Status</th>
+                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#64748B' }}>P/L</th>
+                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#64748B' }}>Depreciation</th>
+                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#64748B' }}>Distributions</th>
+                                            <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#64748B' }}>Total Alloc.</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {tableData.map((row: any, idx: number) => (
+                                            <tr key={idx} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                                                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 500, color: '#0F172A' }}>{row.name}</td>
+                                                <td style={{ padding: '12px 16px' }}>
+                                                    <span style={{ 
+                                                        backgroundColor: row.statusBg, 
+                                                        color: row.statusColor,
+                                                        padding: '2px 8px',
+                                                        borderRadius: 12,
+                                                        fontSize: 11,
+                                                        fontWeight: 500
+                                                    }}>
+                                                        {row.status}
+                                                    </span>
+                                                </td>
+                                                <td style={{ padding: '12px 16px', fontSize: 13, color: '#64748B' }}>{row.pl}</td>
+                                                <td style={{ padding: '12px 16px', fontSize: 13, color: '#64748B' }}>{row.depreciation}</td>
+                                                <td style={{ padding: '12px 16px', fontSize: 13, color: '#64748B' }}>{row.distributions}</td>
+                                                <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 600, color: row.totalAllocColor }}>{row.totalAlloc}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                         </div>
+                    </div>
+                )}
+
+                {activeTab === 'Generated History' && (
+                    <div style={{ width: '100%' }}>
+                         <div style={{ backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: 8, overflow: 'hidden', width: '100%', maxWidth: '100%', boxSizing: 'border-box' }}>
+                            <div style={{ padding: 16, borderBottom: '1px solid #E2E8F0' }}>
+                                <h3 style={{ fontSize: 16, fontWeight: 600, color: '#0F172A', margin: 0 }}>Generated K-1 Forms (2024)</h3>
+                            </div>
+                            {generatedForms.length === 0 ? (
+                                <div style={{ padding: 32, textAlign: 'center', color: '#64748B', fontSize: 14 }}>
+                                    No K-1 forms generated yet. Go to "Generation & Settings" to start.
+                                </div>
+                            ) : (
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                        <thead>
+                                            <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0' }}>
+                                                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#64748B' }}>Investor</th>
+                                                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#64748B' }}>Status</th>
+                                                <th style={{ padding: '12px 16px', textAlign: 'left', fontSize: 12, fontWeight: 600, color: '#64748B' }}>Generated At</th>
+                                                <th style={{ padding: '12px 16px', textAlign: 'right', fontSize: 12, fontWeight: 600, color: '#64748B' }}>Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {generatedForms.map((form: any) => (
+                                                <tr key={form.id} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                                                    <td style={{ padding: '12px 16px', fontSize: 13, fontWeight: 500, color: '#0F172A' }}>{form.user?.name || 'Unknown'}</td>
+                                                    <td style={{ padding: '12px 16px' }}>
+                                                        <span style={{ 
+                                                            backgroundColor: form.status === 'published' ? '#DCFCE7' : '#E0F2FE', 
+                                                            color: form.status === 'published' ? '#10B981' : '#0EA5E9',
+                                                            padding: '2px 8px',
+                                                            borderRadius: 12,
+                                                            fontSize: 11,
+                                                            fontWeight: 500
+                                                        }}>
+                                                            {form.status === 'published' ? 'Published' : 'Generated'}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ padding: '12px 16px', fontSize: 13, color: '#64748B' }}>{new Date(form.generated_at).toLocaleDateString()}</td>
+                                                    <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                                                        <button 
+                                                            onClick={() => handleView(form.id)}
+                                                            style={{ marginRight: 8, padding: '4px 8px', fontSize: 12, border: '1px solid #E2E8F0', borderRadius: 4, backgroundColor: '#fff', cursor: 'pointer' }}>
+                                                            View
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDownload(form.id, form.user?.name || 'Investor')}
+                                                            style={{ marginRight: 8, padding: '4px 8px', fontSize: 12, border: '1px solid #E2E8F0', borderRadius: 4, backgroundColor: '#fff', cursor: 'pointer' }}>
+                                                            Download
+                                                        </button>
+                                                        {form.status !== 'published' && (
+                                                            <button 
+                                                                onClick={() => handlePublish(form.id)}
+                                                                style={{ padding: '4px 8px', fontSize: 12, border: '1px solid #1E3A5F', borderRadius: 4, backgroundColor: '#1E3A5F', color: '#fff', cursor: 'pointer' }}>
+                                                                Email
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                         </div>
+                    </div>
+                )}
+
+                {activeTab === 'Tax Packages' && (
+                    <div style={{ width: '100%', padding: 32, textAlign: 'center', color: '#64748B' }}>
+                        No active generation jobs.
+                    </div>
+                )}
 
             </div>
 

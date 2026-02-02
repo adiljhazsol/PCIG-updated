@@ -18,9 +18,13 @@ class AdminPaymentController extends Controller
         $pendingApproval = Payment::where('status', 'pending')->sum('amount');
         $failedPayments = Payment::where('status', 'failed')->count();
         
-        // Avg processing time (mock logic or DB if we had timestamps for both start/end)
-        // For now, static or calculated from created_at vs processed_at
-        $avgProcessingTime = '1.2 Days'; 
+        // Calculate average processing time (hours)
+        $avgHours = Payment::where('status', 'completed')
+            ->whereNotNull('processed_at')
+            ->selectRaw('AVG(TIMESTAMPDIFF(HOUR, created_at, processed_at)) as avg_hours')
+            ->value('avg_hours');
+            
+        $avgProcessingTime = $avgHours ? round($avgHours / 24, 1) . ' Days' : '0 Days';
 
         $summaryCards = [
             [

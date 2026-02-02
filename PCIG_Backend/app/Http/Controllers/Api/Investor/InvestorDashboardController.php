@@ -22,11 +22,12 @@ class InvestorDashboardController extends Controller
 
         // 1. Calculate Available Cash (Wallet Balance)
         // Formula: Deposits + Sales + Distributions - Withdrawals - Purchases
-        $deposits = Transaction::where('user_id', $user->id)->where('type', 'deposit')->sum('amount');
-        $withdrawals = Transaction::where('user_id', $user->id)->where('type', 'withdrawal')->sum('amount');
-        $purchases = Transaction::where('user_id', $user->id)->where('type', 'purchase')->sum('amount');
-        $sales = Transaction::where('user_id', $user->id)->where('type', 'sale')->sum('amount');
-        $distributions = Transaction::where('user_id', $user->id)->where('type', 'distribution')->sum('amount');
+        // Note: Using whereIn to handle potential case inconsistencies in database
+        $deposits = Transaction::where('user_id', $user->id)->whereIn('type', ['deposit', 'Deposit'])->where('status', 'completed')->sum('amount');
+        $withdrawals = Transaction::where('user_id', $user->id)->whereIn('type', ['withdrawal', 'Withdrawal'])->whereIn('status', ['completed', 'pending', 'processing'])->sum('amount');
+        $purchases = Transaction::where('user_id', $user->id)->whereIn('type', ['purchase', 'Purchase'])->whereIn('status', ['completed', 'pending', 'processing'])->sum('amount');
+        $sales = Transaction::where('user_id', $user->id)->whereIn('type', ['sale', 'Sale'])->where('status', 'completed')->sum('amount');
+        $distributions = Transaction::where('user_id', $user->id)->whereIn('type', ['distribution', 'Distribution'])->where('status', 'completed')->sum('amount');
 
         $availableCash = $deposits + $sales + $distributions - $withdrawals - $purchases;
 
@@ -120,6 +121,7 @@ class InvestorDashboardController extends Controller
                     'id' => $inv->fund->id,
                     'name' => $inv->fund->name,
                     'details' => 'Fund Investment',
+                    'image_url' => $inv->fund->image_path ? asset('storage/' . $inv->fund->image_path) : null,
                     'currentValue' => '$' . number_format($inv->amount, 2),
                     'returns' => '0% Returns', // Placeholder
                     'returnsColor' => '#10B981',

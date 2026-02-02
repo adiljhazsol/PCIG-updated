@@ -46,6 +46,16 @@ class AdminNotificationController extends Controller
         // Active Escalation Rules
         $activeEscalationsCount = EscalationRule::where('is_active', true)->count();
 
+        // Calculate System Health based on recent error logs
+        $totalLogs24h = \App\Models\ActivityLog::where('created_at', '>=', now()->subDay())->count();
+        $errorLogs24h = \App\Models\ActivityLog::where('created_at', '>=', now()->subDay())
+            ->where(function($q) {
+                $q->where('description', 'like', '%error%')
+                  ->orWhere('description', 'like', '%fail%');
+            })->count();
+            
+        $healthPercentage = $totalLogs24h > 0 ? round(100 - (($errorLogs24h / $totalLogs24h) * 100)) : 100;
+
         $summaryCards = [
             [
                 'label' => 'Critical Alerts',
@@ -70,10 +80,10 @@ class AdminNotificationController extends Controller
             ],
             [
                 'label' => 'System Health',
-                'value' => '98%', // Placeholder
-                'trend' => 'All systems operational',
+                'value' => $healthPercentage . '%',
+                'trend' => $healthPercentage == 100 ? 'All systems operational' : 'Minor issues detected',
                 'icon' => 'CheckCircle2',
-                'color' => '#10B981'
+                'color' => $healthPercentage > 90 ? '#10B981' : '#F59E0B'
             ]
         ];
 
@@ -204,6 +214,16 @@ class AdminNotificationController extends Controller
         return response()->json([
             'success' => true,
             'data' => $rule->load('escalateToUser')
+        ]);
+    }
+
+    public function markAllAsRead(Request $request): JsonResponse
+    {
+        $request->user()->unreadNotifications->markAsRead();
+        
+        return response()->json([
+            'success' => true,
+            'message' => 'All notifications marked as read'
         ]);
     }
 

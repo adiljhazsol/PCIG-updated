@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\Storage;
 
 class AdminPropertyController extends Controller
 {
-    public function workflowHub(Request $request): JsonResponse
+    public function workflowHub(): JsonResponse
     {
         // 1. Header
         $header = [
@@ -51,9 +51,14 @@ class AdminPropertyController extends Controller
         $stagesData = [];
         foreach ($stageMapping as $dbStage => $meta) {
             $count = Property::where('workflow_stage', $dbStage)->count();
-            // Mock status for now - can be enhanced with Deadline logic later
-            $status = 'Active'; 
-            $statusColor = $meta['color'];
+            
+            // Check for overdue deadlines in this stage
+            $overdueCount = Deadline::whereHas('property', function($q) use ($dbStage) {
+                $q->where('workflow_stage', $dbStage);
+            })->where('deadline_date', '<', now())->count();
+            
+            $status = $overdueCount > 0 ? 'Attention Needed' : 'Active';
+            $statusColor = $overdueCount > 0 ? '#EF4444' : $meta['color'];
             
             $stagesData[] = [
                 'label' => $meta['label'],
@@ -84,23 +89,28 @@ class AdminPropertyController extends Controller
             'count' => Property::where('workflow_stage', 'surplus')->count() . ' properties'
         ];
 
-        // 5. Stage Panel Items (Mocked for now or generic)
+        // 5. Stage Panel Items
         $stagePanelItems = [
-            ['label' => 'Pending', 'value' => '-'],
-            ['label' => 'In progress', 'value' => '-'],
-            ['label' => 'Completed', 'value' => '-']
+            ['label' => 'Active', 'value' => Property::where('status', 'active')->count()],
+            ['label' => 'On Hold', 'value' => Property::where('status', 'on_hold')->count()],
+            ['label' => 'Completed', 'value' => Property::where('status', 'completed')->count()]
         ];
 
-        // 6. Exports/Letters/Uploads (Mocked or real if tables exist)
+        // 6. Exports/Letters/Uploads
+        $pendingExports = \App\Models\SheriffSale::where('status', 'scheduled')->where('sale_date', '>', now())->count();
+        $pendingNotices = \App\Models\Notice::where('status', 'pending')->count();
+        $pendingUploads = \App\Models\PropertyDocument::where('created_at', '>=', now()->subDays(7))->count();
+
         $exportsLettersUploads = [
-            ['title' => 'Sheriff Exports', 'value' => '0 pending', 'icon' => 'UploadCloud'],
-            ['title' => 'Notice Letters', 'value' => '0 to generate', 'icon' => 'Inbox'],
-            ['title' => 'Document Uploads', 'value' => '0 pending', 'icon' => 'FileText']
+            ['title' => 'Sheriff Exports', 'value' => $pendingExports . ' scheduled', 'icon' => 'UploadCloud'],
+            ['title' => 'Notice Letters', 'value' => $pendingNotices . ' pending', 'icon' => 'Inbox'],
+            ['title' => 'Recent Uploads', 'value' => $pendingUploads . ' this week', 'icon' => 'FileText']
         ];
 
         // 7. Properties Table Rows
         // Fetch properties with needed fields
-        $properties = Property::select('id', 'parcel_id', 'address', 'city', 'state', 'zip_code', 'workflow_stage', 'status', 'created_at', 'updated_at')
+        $properties = Property::select('id', 'parcel_id', 'address', 'city', 'state', 'zip_code', 'workflow_stage', 'status', 'created_at', 'updated_at', 'assigned_user_id')
+            ->with(['assignedUser', 'redemptionTracking'])
             ->orderBy('created_at', 'desc')
             ->limit(500)
             ->get();
@@ -109,14 +119,28 @@ class AdminPropertyController extends Controller
             // Map DB stage to Frontend Label
             $stageLabel = isset($stageMapping[$prop->workflow_stage]) ? $stageMapping[$prop->workflow_stage]['label'] : ($prop->workflow_stage ?? 'Unassigned');
             
+            // Determine deadline (prioritize redemption deadline if applicable)
+            $deadline = 'N/A';
+            if ($prop->redemptionTracking && $prop->redemptionTracking->expiration_date) {
+                $deadline = $prop->redemptionTracking->expiration_date->format('M d, Y');
+            } else {
+                 $nextDeadline = \App\Models\Deadline::where('property_id', $prop->id)
+                    ->where('deadline_date', '>=', now())
+                    ->orderBy('deadline_date', 'asc')
+                    ->first();
+                 if ($nextDeadline) {
+                     $deadline = $nextDeadline->deadline_date->format('M d, Y');
+                 }
+            }
+            
             return [
                 'id' => $prop->parcel_id ?? ('PROP-' . $prop->id),
                 'address' => $prop->address . ', ' . $prop->city, // Simplified address
                 'stage' => $stageLabel,
                 'days' => $prop->updated_at ? $prop->updated_at->diffInDays() . ' days' : '0 days',
-                'assigned' => 'Unassigned',
+                'assigned' => $prop->assignedUser ? $prop->assignedUser->name : 'Unassigned',
                 'action' => 'View',
-                'deadline' => 'Oct 24, 2025'
+                'deadline' => $deadline
             ];
         });
 
@@ -150,6 +174,15 @@ class AdminPropertyController extends Controller
                 'actionItemsSummary' => $actionItemsSummary
             ]
         ]);
+    }
+
+    public function listForDropdown(): JsonResponse
+    {
+        $properties = Property::select('id', 'address', 'city', 'state', 'parcel_id')
+            ->orderBy('address')
+            ->get();
+
+        return response()->json($properties);
     }
 
     public function index(Request $request): JsonResponse
@@ -206,6 +239,11 @@ class AdminPropertyController extends Controller
 
     public function documentsDashboardData(Request $request, $id): JsonResponse
     {
+        // Handle "PROP-" prefix if present
+        if (str_starts_with($id, 'PROP-')) {
+            $id = str_replace('PROP-', '', $id);
+        }
+        
         $property = Property::with(['documents'])->findOrFail($id);
 
         // 1. Header
@@ -214,18 +252,7 @@ class AdminPropertyController extends Controller
             'id' => $property->parcel_id ?? ('PROP-' . $property->id),
             'location' => ($property->city ?? 'Unknown') . ', ' . ($property->state ?? 'FL') . ' ' . ($property->zip_code ?? ''),
             'status' => ucwords(str_replace('_', ' ', $property->workflow_stage ?? 'Research')),
-            'totalFiles' => $property->documents->count(),
-            'missingRequired' => 0 // Mock for now
         ];
-
-        // 2. Alert
-        $alert = null;
-        if ($property->documents->count() == 0) {
-            $alert = [
-                'type' => 'warning',
-                'message' => 'No documents uploaded yet.'
-            ];
-        }
 
         // 3. Folders
         // Define folder structure
@@ -264,7 +291,7 @@ class AdminPropertyController extends Controller
                 'count' => $count . ' files',
                 'icon' => $def['icon'],
                 'types' => $def['types'], // Include types for frontend filtering
-                'hasNew' => false, // Mock
+                'hasNew' => $property->documents->whereIn('type', $def['types'])->where('created_at', '>=', now()->subDays(7))->isNotEmpty(),
                 'missing' => $isMissing
             ];
         }
@@ -292,7 +319,6 @@ class AdminPropertyController extends Controller
             'success' => true,
             'data' => [
                 'header' => $header,
-                'alert' => $alert,
                 'folders' => $folders,
                 'documents' => $documents
             ]
@@ -301,6 +327,11 @@ class AdminPropertyController extends Controller
 
     public function detailDashboardData(Request $request, $id): JsonResponse
     {
+        // Handle "PROP-" prefix if present
+        if (str_starts_with($id, 'PROP-')) {
+            $id = str_replace('PROP-', '', $id);
+        }
+
         $property = Property::with([
             'images',
             'documents',
@@ -319,10 +350,10 @@ class AdminPropertyController extends Controller
             'details' => 'Detail Overview • ' . ($property->parcel_id ?? 'Unknown ID'),
             'address' => $property->address ?? 'Unknown Address',
             'status' => ucfirst($property->status ?? 'pending'),
-            'type' => 'Tax Deed', // Mock or derive
+            'type' => $property->property_type ?? 'Tax Deed',
         ];
 
-        // 2. Alerts (Mock logic based on status/deadlines)
+        // 2. Alerts
         $alerts = [];
         if ($property->status === 'redemption' && $property->redemptionTracking) {
             $deadline = $property->redemptionTracking->expiration_date;
@@ -349,11 +380,13 @@ class AdminPropertyController extends Controller
                 'minutes' => 0
             ],
             'deadline' => 'N/A',
+            'deadlineIso' => null,
             'bidPrice' => '$' . number_format($property->purchase_price ?? 0, 2),
             'accruedInterest' => '$0.00',
             'expenses' => '$0.00',
             'estimatedPayoff' => '$0.00',
-            'dailyAccrual' => ['amount' => '$0.00', 'per' => 'day']
+            'dailyAccrual' => ['amount' => '$0.00', 'per' => 'day'],
+            'breakdown' => []
         ];
 
         if ($property->redemptionTracking) {
@@ -367,13 +400,37 @@ class AdminPropertyController extends Controller
                     'minutes' => $diff->i
                 ];
                 $redemptionEngine['deadline'] = $deadline->format('M d, Y');
+                $redemptionEngine['deadlineIso'] = $deadline->toIso8601String();
             }
-            // Mock calculations for now
             $bidPrice = $property->purchase_price ?? 0;
-            $interest = $bidPrice * 0.12; // 12% mock
+            
+            // Use InterestCalculation if available, otherwise fallback to estimation
+            if ($property->interestCalculations->count() > 0) {
+                $interest = $property->interestCalculations->sum('calculated_amount');
+            } else {
+                $interest = $bidPrice * 0.12; // 12% estimation
+            }
+
+            // Calculate Expenses
+            $expensesTotal = \App\Models\Expense::where('property_id', $property->id)->sum('amount');
+            $expenseItems = \App\Models\Expense::where('property_id', $property->id)
+                ->select('description', 'amount', 'date', 'category')
+                ->orderBy('date', 'desc')
+                ->get()
+                ->map(function ($exp) {
+                    return [
+                        'description' => $exp->description,
+                        'amount' => '$' . number_format($exp->amount, 2),
+                        'date' => $exp->date->format('M d, Y'),
+                        'category' => $exp->category
+                    ];
+                });
+
+            $redemptionEngine['expenses'] = '$' . number_format($expensesTotal, 2);
             $redemptionEngine['accruedInterest'] = '$' . number_format($interest, 2);
-            $redemptionEngine['estimatedPayoff'] = '$' . number_format($bidPrice + $interest, 2);
+            $redemptionEngine['estimatedPayoff'] = '$' . number_format($bidPrice + $interest + $expensesTotal, 2);
             $redemptionEngine['dailyAccrual']['amount'] = '$' . number_format($interest / 365, 2);
+            $redemptionEngine['breakdown'] = $expenseItems;
         }
 
         // 4. Workflow Timeline
@@ -473,10 +530,10 @@ class AdminPropertyController extends Controller
         $propertyInfo = [
             'details' => [
                 ['label' => 'Parcel ID', 'value' => $property->parcel_id],
-                ['label' => 'Legal Description', 'value' => 'Lot 5 Block 3...'], // Mock or add field
-                ['label' => 'Zoning', 'value' => 'Residential'], // Mock or add field
-                ['label' => 'Lot Size', 'value' => '0.25 Acres'], // Mock or add field
-                ['label' => 'Year Built', 'value' => '1985'] // Mock or add field
+                ['label' => 'Legal Description', 'value' => $property->legal_description ?? 'N/A'],
+                ['label' => 'Zoning', 'value' => $property->zoning ?? 'N/A'],
+                ['label' => 'Lot Size', 'value' => $property->lot_size ?? 'N/A'],
+                ['label' => 'Year Built', 'value' => $property->year_built ?? 'N/A']
             ],
             'financials' => [
                  ['label' => 'Purchase Price', 'value' => '$' . number_format($property->purchase_price, 2)],
@@ -532,6 +589,8 @@ class AdminPropertyController extends Controller
         $data['available_shares'] = $data['available_shares'] ?? ($data['total_shares'] ?? 0);
         
         // Handle required DB fields that are nullable in request
+        $propertyCode = $data['property_code'] ?? ($data['parcel_id'] ?? uniqid('PROP-'));
+        $location = $data['location'] ?? (($data['city'] ?? '') . ', ' . ($data['state'] ?? ''));
         $data['county'] = $data['county'] ?? 'Unknown';
         $data['zip_code'] = $data['zip_code'] ?? '00000';
         $data['current_value'] = $data['current_value'] ?? 0;
@@ -539,7 +598,22 @@ class AdminPropertyController extends Controller
         $data['purchase_price'] = $data['purchase_price'] ?? 0;
         $data['price_per_share'] = $data['price_per_share'] ?? 0;
 
-        $property = Property::create($data);
+        $property = new Property();
+        $property->fill($data);
+        $property->property_code = $propertyCode;
+        $property->location = $location;
+        $property->save();
+
+        // Handle Redemption Tracking
+        if (isset($data['redemption_deadline']) && $data['redemption_deadline']) {
+            $property->redemptionTracking()->updateOrCreate(
+                ['property_id' => $property->id],
+                [
+                    'redemption_deadline' => $data['redemption_deadline'],
+                    'status' => 'pending'
+                ]
+            );
+        }
 
         // Automate deadline generation based on initial stage
         if ($property->workflow_stage) {

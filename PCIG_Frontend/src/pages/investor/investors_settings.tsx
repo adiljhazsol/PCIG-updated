@@ -117,11 +117,16 @@ export default function InvestorsSettings() {
     ]
   });
   
-  const [bankAccounts] = useState<BankAccount[]>([
-    { id: 1, bankName: 'Chase Bank', accountNumber: '**** 4589', type: 'Checking', isPrimary: true, status: 'verified', statusLabel: 'Verified' },
-    { id: 2, bankName: 'Wells Fargo', accountNumber: '**** 2231', type: 'Savings', isPrimary: false, status: 'pending', statusLabel: 'Pending' }
-  ]);
-  
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  const [showAddAccountModal, setShowAddAccountModal] = useState(false);
+  const [editingAccountId, setEditingAccountId] = useState<number | null>(null);
+  const [newAccount, setNewAccount] = useState({
+    bankName: '',
+    accountNumber: '',
+    routingNumber: '',
+    type: 'checking'
+  });
+
   const [privacyData, setPrivacyData] = useState<PrivacyData>({
     profileVisibility: 'private',
     showNetWorth: false,
@@ -138,7 +143,154 @@ export default function InvestorsSettings() {
 
   useEffect(() => {
     fetchProfile();
+    fetchNotifications();
+    fetchBankAccounts();
+    fetchPrivacy();
   }, []);
+
+  const fetchBankAccounts = async () => {
+    try {
+        const response = await api.get('/investor/settings/bank-accounts');
+        if (response.data.success) {
+            setBankAccounts(response.data.data.map((acc: any) => ({
+                id: acc.id,
+                bankName: acc.bank_name,
+                accountNumber: `**** ${acc.account_number_last_4}`,
+                type: acc.account_type.charAt(0).toUpperCase() + acc.account_type.slice(1),
+                isPrimary: false, // Not implemented yet
+                status: acc.status,
+                statusLabel: acc.status.charAt(0).toUpperCase() + acc.status.slice(1)
+            })));
+        }
+    } catch (err) {
+        console.error('Error fetching bank accounts:', err);
+    }
+  };
+
+  const fetchPrivacy = async () => {
+      try {
+          const response = await api.get('/investor/settings/privacy');
+          if (response.data.success) {
+              setPrivacyData(response.data.data);
+          }
+      } catch (err) {
+          console.error('Error fetching privacy settings:', err);
+      }
+  };
+
+  const handleSavePrivacy = async () => {
+      try {
+          setLoading(true);
+          const response = await api.put('/investor/settings/privacy', privacyData);
+          if (response.data.success) {
+              setSuccessMessage('Privacy settings updated successfully.');
+          }
+      } catch (err: any) {
+          setError(err.response?.data?.message || 'Failed to save privacy settings.');
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  const handleSaveAccount = async () => {
+    try {
+        setLoading(true);
+        if (editingAccountId) {
+            const response = await api.put(`/investor/settings/bank-accounts/${editingAccountId}`, {
+                bank_name: newAccount.bankName,
+                account_type: newAccount.type,
+                account_number: newAccount.accountNumber,
+                routing_number: newAccount.routingNumber
+            });
+             if (response.data.success) {
+                setSuccessMessage('Bank account updated successfully.');
+            }
+        } else {
+            const response = await api.post('/investor/settings/bank-accounts', {
+                bank_name: newAccount.bankName,
+                account_type: newAccount.type,
+                account_number: newAccount.accountNumber,
+                routing_number: newAccount.routingNumber
+            });
+             if (response.data.success) {
+                setSuccessMessage('Bank account added successfully.');
+            }
+        }
+        
+        setShowAddAccountModal(false);
+        setEditingAccountId(null);
+        setNewAccount({ bankName: '', accountNumber: '', routingNumber: '', type: 'checking' });
+        fetchBankAccounts();
+    } catch (err: any) {
+        setError(err.response?.data?.message || 'Failed to save bank account.');
+    } finally {
+        setLoading(false);
+    }
+  };
+
+  const handleEditBankAccount = (account: BankAccount) => {
+      setEditingAccountId(account.id);
+      setNewAccount({
+          bankName: account.bankName,
+          accountNumber: '', // Security: user must re-enter
+          routingNumber: '',
+          type: account.type.toLowerCase()
+      });
+      setShowAddAccountModal(true);
+  };
+
+  const handleDeleteBankAccount = async (id: number) => {
+      if (!window.confirm('Are you sure you want to remove this bank account?')) return;
+      
+      try {
+          const response = await api.delete(`/investor/settings/bank-accounts/${id}`);
+          if (response.data.success) {
+              setSuccessMessage('Bank account removed successfully.');
+              fetchBankAccounts();
+          }
+      } catch (err: any) {
+          setError(err.response?.data?.message || 'Failed to remove bank account.');
+      }
+  };
+
+  const handleVerifyBankAccount = async (id: number) => {
+      try {
+          const response = await api.post(`/investor/settings/bank-accounts/${id}/verify`);
+          if (response.data.success) {
+              setSuccessMessage('Bank account verified successfully.');
+              fetchBankAccounts();
+          }
+      } catch (err: any) {
+          setError(err.response?.data?.message || 'Failed to verify bank account.');
+      }
+  };
+
+  const fetchNotifications = async () => {
+    try {
+      const response = await api.get('/investor/settings/notifications');
+      if (response.data.success) {
+        const prefs = response.data.data;
+        
+        // Map backend prefs to frontend state
+        const emailAll = prefs.find((p: any) => p.channel === 'email' && p.type === 'all');
+        const inAppAll = prefs.find((p: any) => p.channel === 'in_app' && p.type === 'all');
+        
+        const newTypes = notificationData.emailNotificationTypes.map(type => {
+            const found = prefs.find((p: any) => p.channel === 'email' && p.type === type.id);
+            return found ? { ...type, enabled: !!found.enabled } : type;
+        });
+
+        setNotificationData(prev => ({
+            ...prev,
+            emailNotificationsEnabled: emailAll ? !!emailAll.enabled : prev.emailNotificationsEnabled,
+            inAppNotificationsEnabled: inAppAll ? !!inAppAll.enabled : prev.inAppNotificationsEnabled,
+            emailNotificationTypes: newTypes
+        }));
+      }
+    } catch (err) {
+      console.error('Error fetching notifications:', err);
+    }
+  };
 
   const fetchProfile = async () => {
     try {
@@ -165,6 +317,7 @@ export default function InvestorsSettings() {
         setProfileData({
           fullName: user.name,
           email: user.email,
+          emailVerified: !!user.email_verified_at,
           phone: profile?.phone || '',
           address: addressObj,
           photoUrl: profile?.photo_url || null,
@@ -197,11 +350,7 @@ export default function InvestorsSettings() {
       const formData = new FormData();
       formData.append('photo', file);
 
-      const response = await api.post('/investor/settings/photo', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      const response = await api.post('/investor/settings/photo', formData);
 
       if (response.data.success) {
         setProfileData(prev => ({ ...prev, photoUrl: response.data.data.photo_url }));
@@ -216,6 +365,27 @@ export default function InvestorsSettings() {
       if (fileInputRef.current) {
         fileInputRef.current.value = '';
       }
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    if (!profileData.photoUrl) return;
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await api.delete('/investor/settings/photo');
+      
+      if (response.data.success) {
+        setProfileData(prev => ({ ...prev, photoUrl: null }));
+        setSuccessMessage('Profile photo removed successfully');
+      }
+    } catch (err: any) {
+      console.error('Error removing photo:', err);
+      setError(err.response?.data?.message || 'Failed to remove photo');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -273,6 +443,64 @@ export default function InvestorsSettings() {
     } catch (err: any) {
       console.error('Error changing password:', err);
       setError(err.response?.data?.message || 'Failed to change password.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSaveNotifications = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      setSuccessMessage(null);
+
+      // Construct preferences array
+      const preferences = [];
+      
+      // Global toggles
+      preferences.push({ channel: 'email', type: 'all', enabled: notificationData.emailNotificationsEnabled });
+      preferences.push({ channel: 'in_app', type: 'all', enabled: notificationData.inAppNotificationsEnabled });
+      
+      // Specific types
+      notificationData.emailNotificationTypes.forEach(type => {
+          preferences.push({
+              channel: 'email',
+              type: type.id,
+              enabled: type.enabled
+          });
+      });
+
+      const response = await api.put('/investor/settings/notifications', { preferences });
+
+      if (response.data.success) {
+        setSuccessMessage('Notification preferences saved successfully.');
+      }
+    } catch (err: any) {
+      console.error('Error saving notifications:', err);
+      setError(err.response?.data?.message || 'Failed to save notification preferences.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (!window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const response = await api.delete('/investor/settings/account');
+      
+      if (response.data.success) {
+        alert('Account deleted successfully.');
+        window.location.href = '/login';
+      }
+    } catch (err: any) {
+      console.error('Error deleting account:', err);
+      setError(err.response?.data?.message || 'Failed to delete account.');
     } finally {
       setLoading(false);
     }
@@ -378,7 +606,9 @@ export default function InvestorsSettings() {
               <Camera style={{ width: '16px', height: '16px' }} />
               Change Photo
             </button>
-            <button style={{
+            <button 
+              onClick={handleRemovePhoto}
+              style={{
               padding: `clamp(8px, 1vh, 10px) clamp(16px, 2vw, 20px)`,
               fontSize: `clamp(13px, 1.5vw, 14px)`,
               fontWeight: 500,
@@ -1070,7 +1300,9 @@ export default function InvestorsSettings() {
         gap: '12px',
         flexDirection: isMobile ? 'column' : 'row'
       }}>
-        <button style={{
+        <button 
+          onClick={fetchNotifications}
+          style={{
           padding: `clamp(10px, 1.2vh, 12px) clamp(20px, 2.5vw, 24px)`,
           fontSize: `clamp(13px, 1.5vw, 14px)`,
           fontWeight: 500,
@@ -1083,7 +1315,9 @@ export default function InvestorsSettings() {
         }}>
           Reset
         </button>
-        <button style={{
+        <button 
+          onClick={handleSaveNotifications}
+          style={{
           padding: `clamp(10px, 1.2vh, 12px) clamp(20px, 2.5vw, 24px)`,
           fontSize: `clamp(13px, 1.5vw, 14px)`,
           fontWeight: 500,
@@ -1118,7 +1352,13 @@ export default function InvestorsSettings() {
             Manage your linked bank accounts
           </p>
         </div>
-        <button style={{
+        <button 
+          onClick={() => {
+            setEditingAccountId(null);
+            setNewAccount({ bankName: '', accountNumber: '', routingNumber: '', type: 'checking' });
+            setShowAddAccountModal(true);
+          }}
+          style={{
           padding: `clamp(10px, 1.2vh, 12px) clamp(16px, 2vw, 20px)`,
           fontSize: `clamp(13px, 1.5vw, 14px)`,
           fontWeight: 500,
@@ -1204,7 +1444,9 @@ export default function InvestorsSettings() {
                   Verify
                 </button>
               )}
-              <button style={{
+              <button 
+                onClick={() => handleEditBankAccount(account)}
+                style={{
                 padding: `clamp(8px, 1vh, 10px) clamp(12px, 1.5vw, 16px)`,
                 fontSize: `clamp(12px, 1.4vw, 13px)`,
                 fontWeight: 500,
@@ -1354,6 +1596,26 @@ export default function InvestorsSettings() {
             }} />
           </button>
         </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '16px' }}>
+            <button 
+              onClick={handleSavePrivacy}
+              disabled={loading}
+              style={{
+              padding: `clamp(10px, 1.2vh, 12px) clamp(20px, 2.5vw, 24px)`,
+              fontSize: `clamp(13px, 1.5vw, 14px)`,
+              fontWeight: 500,
+              color: '#FFFFFF',
+              backgroundColor: '#1E3A5F',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: loading ? 'not-allowed' : 'pointer',
+              opacity: loading ? 0.7 : 1,
+              width: isMobile ? '100%' : 'auto'
+            }}>
+              Save Changes
+            </button>
+        </div>
       </div>
     </div>
   );
@@ -1397,7 +1659,8 @@ export default function InvestorsSettings() {
         Once you delete your account, there is no going back. Please be certain.
       </p>
       <button
-        onClick={() => { /* Implement Request Account Deletion Function */ }}
+        onClick={handleDeleteAccount}
+        disabled={loading}
         style={{
           padding: `clamp(10px, 1.2vh, 12px) clamp(20px, 2.5vw, 24px)`,
           fontSize: `clamp(13px, 1.5vw, 14px)`,
@@ -1406,13 +1669,159 @@ export default function InvestorsSettings() {
           backgroundColor: '#DC2626',
           border: 'none',
           borderRadius: '6px',
-          cursor: 'pointer',
+          cursor: loading ? 'not-allowed' : 'pointer',
+          opacity: loading ? 0.7 : 1,
           width: isMobile ? '100%' : 'auto'
         }}>
-        Request Account Deletion
+        {loading ? <Loader2 className="animate-spin" style={{ width: '16px', height: '16px' }} /> : 'Request Account Deletion'}
       </button>
     </div>
   );
+
+  const renderAddAccountModal = () => {
+      if (!showAddAccountModal) return null;
+      
+      return (
+          <div style={{
+              position: 'fixed',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              padding: '16px'
+          }}>
+              <div style={{
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: '8px',
+                  width: '100%',
+                  maxWidth: '500px',
+                  padding: '24px',
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+              }}>
+                  <h3 style={{ marginTop: 0, marginBottom: '16px', color: '#0F172A' }}>
+                      {editingAccountId ? 'Edit Bank Account' : 'Add Bank Account'}
+                  </h3>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                      <div>
+                          <label style={{ display: 'block', marginBottom: '6px', color: '#0F172A', fontSize: '14px', fontWeight: 500 }}>Bank Name</label>
+                          <input 
+                              type="text" 
+                              value={newAccount.bankName}
+                              onChange={(e) => setNewAccount({...newAccount, bankName: e.target.value})}
+                              placeholder="e.g. Chase Bank"
+                              style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #E2E8F0',
+                                  fontSize: '14px',
+                                  boxSizing: 'border-box'
+                              }}
+                          />
+                      </div>
+                      
+                      <div>
+                          <label style={{ display: 'block', marginBottom: '6px', color: '#0F172A', fontSize: '14px', fontWeight: 500 }}>Account Type</label>
+                          <select
+                              value={newAccount.type}
+                              onChange={(e) => setNewAccount({...newAccount, type: e.target.value})}
+                              style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #E2E8F0',
+                                  fontSize: '14px',
+                                  boxSizing: 'border-box'
+                              }}
+                          >
+                              <option value="checking">Checking</option>
+                              <option value="savings">Savings</option>
+                          </select>
+                      </div>
+                      
+                      <div>
+                          <label style={{ display: 'block', marginBottom: '6px', color: '#0F172A', fontSize: '14px', fontWeight: 500 }}>Account Number</label>
+                          <input 
+                              type="text" 
+                              value={newAccount.accountNumber}
+                              onChange={(e) => setNewAccount({...newAccount, accountNumber: e.target.value})}
+                              placeholder="Enter account number"
+                              style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #E2E8F0',
+                                  fontSize: '14px',
+                                  boxSizing: 'border-box'
+                              }}
+                          />
+                      </div>
+                      
+                      <div>
+                          <label style={{ display: 'block', marginBottom: '6px', color: '#0F172A', fontSize: '14px', fontWeight: 500 }}>Routing Number</label>
+                          <input 
+                              type="text" 
+                              value={newAccount.routingNumber}
+                              onChange={(e) => setNewAccount({...newAccount, routingNumber: e.target.value})}
+                              placeholder="Enter routing number"
+                              style={{
+                                  width: '100%',
+                                  padding: '10px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #E2E8F0',
+                                  fontSize: '14px',
+                                  boxSizing: 'border-box'
+                              }}
+                          />
+                      </div>
+                      
+                      <div style={{ display: 'flex', gap: '12px', marginTop: '8px', justifyContent: 'flex-end' }}>
+                          <button 
+                              onClick={() => setShowAddAccountModal(false)}
+                              style={{
+                                  padding: '10px 16px',
+                                  borderRadius: '6px',
+                                  border: '1px solid #E2E8F0',
+                                  backgroundColor: '#FFFFFF',
+                                  color: '#64748B',
+                                  cursor: 'pointer',
+                                  fontWeight: 500
+                              }}
+                          >
+                              Cancel
+                          </button>
+                          <button 
+                              onClick={handleSaveAccount}
+                              disabled={loading}
+                              style={{
+                                  padding: '10px 16px',
+                                  borderRadius: '6px',
+                                  border: 'none',
+                                  backgroundColor: '#1E3A5F',
+                                  color: '#FFFFFF',
+                                  cursor: loading ? 'not-allowed' : 'pointer',
+                                  fontWeight: 500,
+                                  opacity: loading ? 0.7 : 1,
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px'
+                              }}
+                          >
+                              {loading && <Loader2 className="animate-spin" style={{ width: '16px', height: '16px' }} />}
+                              {editingAccountId ? 'Update Account' : 'Add Account'}
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      );
+  };
 
   const renderMainContent = () => {
     switch (activeSection) {
@@ -1584,10 +1993,11 @@ export default function InvestorsSettings() {
               </div>
             )}
             {renderMainContent()}
-            {activeSection !== 'preferences' && renderDangerZone()}
+            {activeSection !== 'preferences' && activeSection !== 'notifications' && renderDangerZone()}
           </div>
         </div>
       </div>
+      {renderAddAccountModal()}
 
 
 

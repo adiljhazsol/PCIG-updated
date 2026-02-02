@@ -1,11 +1,12 @@
-import { CSSProperties, useState, useEffect } from 'react';
+import { CSSProperties, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   UploadCloud,
   FileText,
   Table,
   Clock,
-  CheckCircle2
+  CheckCircle2,
+  File
 } from 'lucide-react';
 import AdminNav from '../../components/admin/AdminNav';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
@@ -22,6 +23,7 @@ export default function ImportCenter() {
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -50,27 +52,206 @@ export default function ImportCenter() {
     subtitle: 'Manage data imports and integrations',
     stats: []
   };
-  const tabs: ImportTabKey[] = importData?.tabs || ['fifa', 'excel', 'pdf', 'history'];
+  
+  // Normalize tabs to objects
+  const rawTabs = importData?.tabs || ['fifa', 'excel', 'pdf', 'history'];
+  const tabs = rawTabs.map((t: any) => 
+    typeof t === 'string' 
+      ? { id: t.toLowerCase().replace(/\s+/g, '_'), label: t, type: 'excel' } 
+      : t
+  );
+
+  // Force 'fifa' tab to use 'fifa' panel config (which is now Excel-based)
+  // Ensure the type matches the key in uploadPanels
+  const refinedTabs = tabs.map((t: any) => {
+      if (t.id === 'fifa') return { ...t, type: 'fifa' };
+      return t;
+  });
+
   const uploadPanels = importData?.uploadPanels || {
       fifa: {
-          title: 'FIFA Import',
-          description: 'Upload FIFA property data for automated processing',
-          primaryButton: 'Upload File',
-          helper: 'Supports .xlsx, .xls, .csv (max 10MB)'
+          title: 'Upload FIFA List (Excel/CSV)',
+          description: 'Upload FIFA property list for automated processing.',
+          primaryButton: 'Upload Excel/CSV',
+          helper: 'Supports .xlsx, .csv',
+          acceptedFileTypes: '.csv,.xlsx,.xls'
       },
       excel: {
           title: 'Excel / CSV Import',
           description: 'Import property lists, financial data, or investor records',
           primaryButton: 'Select File',
-          helper: 'Supports .xlsx, .csv'
+          helper: 'Supports .xlsx, .csv',
+          acceptedFileTypes: '.csv,.xlsx,.xls'
+      },
+      generic: {
+          title: 'Upload Documents',
+          description: 'Upload general documents',
+          primaryButton: 'Select File',
+          helper: 'Supports various formats',
+          acceptedFileTypes: '*/*'
       }
   };
   const reviewQueue = importData?.reviewQueue || [];
   const recentBatches = importData?.recentBatches || [];
   const statusFilters: string[] = importData?.statusFilters || ['All', 'Processing', 'Completed', 'Error'];
 
-  const [activeTab, setActiveTab] = useState<ImportTabKey>(tabs[0]);
+  const [activeTab, setActiveTab] = useState<string>(refinedTabs[0]?.id || 'fifa');
   const [activeStatusFilter, setActiveStatusFilter] = useState<string>(statusFilters[0]);
+  
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadFormData, setUploadFormData] = useState({
+      name: '',
+      description: '',
+      date: new Date().toISOString().split('T')[0]
+  });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  
+  // Edit Modal State
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+      id: '',
+      address: '',
+      parcel_id: '',
+      city: '',
+      state: '',
+      zip_code: ''
+  });
+
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // Determine active panel config
+  const activeTabConfig = refinedTabs.find((t: any) => t.id === activeTab) || refinedTabs[0];
+  const panelType = activeTabConfig?.type || 'excel';
+  const activePanel = uploadPanels[panelType] || uploadPanels['excel'];
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+      if (e.target.checked) {
+          // Select all IDs from current rows
+          const allIds = reviewQueue.rows?.map((r: any) => String(r.id)) || [];
+          setSelectedIds(allIds);
+      } else {
+          setSelectedIds([]);
+      }
+  };
+
+  const handleSelectRow = (id: string | number) => {
+      const idStr = String(id);
+      setSelectedIds(prev => {
+          if (prev.includes(idStr)) {
+              return prev.filter(i => i !== idStr);
+          } else {
+              return [...prev, idStr];
+          }
+      });
+  };
+
+  const handleBulkConfirm = async () => {
+      if (selectedIds.length === 0) return;
+      
+      try {
+          await api.post('/admin/imports/review/confirm-batch', { ids: selectedIds });
+          setSelectedIds([]);
+          // Refresh data
+          const response = await api.get('/admin/imports/dashboard-data');
+          if (response.data && response.data.data && response.data.data.importCenter) {
+              setData(response.data.data.importCenter);
+          }
+          alert('Selected properties confirmed successfully!');
+      } catch (err) {
+          console.error('Failed to confirm properties:', err);
+          alert('Failed to confirm properties');
+      }
+  };
+
+  const handleAction = async (action: string, row: any) => {
+      if (action === 'Confirm') {
+          try {
+              await api.post(`/admin/imports/review/${row.id}/confirm`);
+              // Refresh data
+              const response = await api.get('/admin/imports/dashboard-data');
+              if (response.data && response.data.data && response.data.data.importCenter) {
+                setData(response.data.data.importCenter);
+              }
+              // alert('Property confirmed successfully!'); // Optional: suppress alert for smoother UX
+          } catch (err) {
+              console.error('Failed to confirm property:', err);
+              alert('Failed to confirm property');
+          }
+      } else if (action === 'Edit') {
+          // Populate form data from row
+          // Based on AdminImportCenterController mapping:
+          // extracted.primary = property.address
+          // proposed.primary = property.parcel_id
+          
+          const address = row.extracted?.primary || '';
+          const parcelId = row.proposed?.primary || ''; 
+          
+          setEditFormData({
+              id: row.id,
+              address: address,
+              parcel_id: parcelId,
+              city: '', // These might not be easily available from the dashboard view model
+              state: '',
+              zip_code: ''
+          });
+          setShowEditModal(true);
+      }
+  };
+
+  const handleEditSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      try {
+          await api.post(`/admin/imports/review/${editFormData.id}/update`, editFormData);
+          setShowEditModal(false);
+          
+          // Refresh data
+          const response = await api.get('/admin/imports/dashboard-data');
+          if (response.data && response.data.data && response.data.data.importCenter) {
+            setData(response.data.data.importCenter);
+          }
+          alert('Property updated successfully!');
+      } catch (err) {
+          console.error('Failed to update property:', err);
+          alert('Failed to update property');
+      }
+  };
+
+  const handleUploadSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedFile) {
+        alert('Please select a file');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('name', uploadFormData.name);
+    formData.append('description', uploadFormData.description);
+    formData.append('date', uploadFormData.date);
+
+    try {
+      setLoading(true);
+      await api.post(`/admin/imports/upload/${activeTab}`, formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      // Refresh data after upload
+      const response = await api.get('/admin/imports/dashboard-data');
+      if (response.data && response.data.data && response.data.data.importCenter) {
+        setData(response.data.data.importCenter);
+      }
+      alert('Upload successful!');
+      setShowUploadModal(false);
+      setUploadFormData({ name: '', description: '', date: new Date().toISOString().split('T')[0] });
+      setSelectedFile(null);
+    } catch (err) {
+      console.error('Upload failed:', err);
+      alert('Upload failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const pageWrapperStyle: CSSProperties = {
     fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -90,7 +271,7 @@ export default function ImportCenter() {
     boxSizing: 'border-box'
   };
 
-  if (loading) {
+  if (loading && !data) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', backgroundColor: '#F8FAFC' }}>
         <div style={{ color: '#64748B' }}>Loading import center...</div>
@@ -177,27 +358,6 @@ export default function ImportCenter() {
               <Clock style={{ width: 16, height: 16, color: '#64748B' }} />
               {importData.headerButtons.importHistory}
             </button>
-            <button
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                padding: isMobile ? '8px 12px' : '10px 16px',
-                fontSize: isMobile ? '12px' : '13px',
-                fontWeight: 500,
-                color: '#FFFFFF',
-                backgroundColor: '#1E3A5F',
-                borderRadius: 8,
-                border: 'none',
-                cursor: 'pointer',
-                flex: isMobile ? 1 : 'none',
-                justifyContent: 'center',
-                boxSizing: 'border-box'
-              }}
-            >
-              <UploadCloud style={{ width: 16, height: 16 }} />
-              {importData.headerButtons.downloadTemplates}
-            </button>
           </div>
         </div>
 
@@ -212,23 +372,24 @@ export default function ImportCenter() {
             WebkitOverflowScrolling: 'touch'
           }}
         >
-          {tabs.map((tab) => (
+          {refinedTabs.map((tab: any) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
               style={{
                 padding: isMobile ? '10px 0' : '12px 0',
                 fontSize: isMobile ? '13px' : '14px',
                 fontWeight: 500,
-                color: activeTab === tab ? '#1E3A5F' : '#64748B',
+                color: activeTab === tab.id ? '#1E3A5F' : '#64748B',
                 backgroundColor: 'transparent',
                 border: 'none',
-                borderBottom: activeTab === tab ? '2px solid #1E3A5F' : '2px solid transparent',
+                borderBottom: activeTab === tab.id ? '2px solid #1E3A5F' : '2px solid transparent',
                 cursor: 'pointer',
-                marginBottom: '-1px'
+                marginBottom: '-1px',
+                whiteSpace: 'nowrap'
               }}
             >
-              {tab}
+              {tab.label}
             </button>
           ))}
         </div>
@@ -237,22 +398,37 @@ export default function ImportCenter() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: isMobileOrTablet ? '1fr' : '1.3fr 1fr',
+            gridTemplateColumns: '1fr', // Single column for focused view
             gap: isMobile ? 16 : 24,
             marginBottom: isMobile ? 24 : 32
           }}
         >
-          {/* Left - FIFA PDFs upload */}
+          {/* Dynamic Panel based on Active Tab */}
           <div
+            key={activeTab} // Force re-render on tab change for visual feedback
             style={{
               borderRadius: 12,
               border: '1px dashed #BFDBFE',
               backgroundColor: '#EFF6FF',
               padding: isMobile ? '20px' : '28px',
               minHeight: 220,
-              boxSizing: 'border-box'
+              boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              textAlign: 'center',
+              animation: 'fadeIn 0.3s ease-in-out'
             }}
           >
+            <style>
+              {`
+                @keyframes fadeIn {
+                  from { opacity: 0; transform: translateY(5px); }
+                  to { opacity: 1; transform: translateY(0); }
+                }
+              `}
+            </style>
             <div
               style={{
                 width: isMobile ? 48 : 56,
@@ -265,7 +441,13 @@ export default function ImportCenter() {
                 marginBottom: 16
               }}
             >
-              <FileText style={{ width: 28, height: 28, color: '#1E3A5F' }} />
+               {panelType === 'fifa' ? (
+                  <FileText style={{ width: 28, height: 28, color: '#1E3A5F' }} />
+               ) : panelType === 'generic' ? (
+                  <File style={{ width: 28, height: 28, color: '#1E3A5F' }} />
+               ) : (
+                  <Table style={{ width: 28, height: 28, color: '#15803D' }} />
+               )}
             </div>
             <h2
               style={{
@@ -276,128 +458,51 @@ export default function ImportCenter() {
                 marginBottom: 4
               }}
             >
-              {uploadPanels.fifa.title}
+              {activePanel.title}
             </h2>
             <p
               style={{
                 fontSize: isMobile ? '12px' : '13px',
                 color: '#64748B',
                 margin: 0,
-                marginBottom: 20
+                marginBottom: 20,
+                maxWidth: 400
               }}
             >
-              {uploadPanels.fifa.description}
+              {activePanel.description}
             </p>
-            <button
-              onClick={() => navigate('/admin/properties/fifa-import/new')}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                padding: isMobile ? '9px 16px' : '10px 18px',
-                fontSize: isMobile ? '13px' : '14px',
-                fontWeight: 500,
-                color: '#FFFFFF',
-                backgroundColor: '#1E3A5F',
-                borderRadius: 999,
-                border: 'none',
-                cursor: 'pointer',
-                marginBottom: 8
-              }}
-            >
-              <UploadCloud style={{ width: 16, height: 16 }} />
-              {uploadPanels.fifa.primaryButton}
-            </button>
+            
+            <div style={{ display: 'flex', gap: 10, flexWrap: isMobile ? 'wrap' : 'nowrap', justifyContent: 'center' }}>
+                <button
+                    onClick={() => setShowUploadModal(true)}
+                    style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 8,
+                        padding: isMobile ? '9px 16px' : '10px 18px',
+                        fontSize: isMobile ? '13px' : '14px',
+                        fontWeight: 500,
+                        color: '#FFFFFF',
+                        backgroundColor: '#1E3A5F',
+                        borderRadius: 999,
+                        border: 'none',
+                        cursor: 'pointer'
+                    }}
+                >
+                    <UploadCloud style={{ width: 16, height: 16 }} />
+                    {activePanel.primaryButton || activePanel.uploadButton}
+                </button>
+            </div>
+
             <div
               style={{
                 fontSize: isMobile ? '11px' : '12px',
-                color: '#64748B'
+                color: '#64748B',
+                marginTop: 8
               }}
             >
-              {uploadPanels.fifa.helper}
-            </div>
-          </div>
-
-          {/* Right - Excel/CSV upload */}
-          <div
-            style={{
-              borderRadius: 12,
-              border: '1px dashed #BBF7D0',
-              backgroundColor: '#ECFDF5',
-              padding: isMobile ? '20px' : '28px',
-              minHeight: 220,
-              boxSizing: 'border-box'
-            }}
-          >
-            <div
-              style={{
-                width: isMobile ? 48 : 56,
-                height: isMobile ? 48 : 56,
-                borderRadius: 999,
-                backgroundColor: '#BBF7D0',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginBottom: 16
-              }}
-            >
-              <Table style={{ width: 28, height: 28, color: '#15803D' }} />
-            </div>
-            <h2
-              style={{
-                fontSize: isMobile ? '16px' : '18px',
-                fontWeight: 600,
-                color: '#064E3B',
-                margin: 0,
-                marginBottom: 4
-              }}
-            >
-              {uploadPanels.excel.title}
-            </h2>
-            <p
-              style={{
-                fontSize: isMobile ? '12px' : '13px',
-                color: '#166534',
-                margin: 0,
-                marginBottom: 16
-              }}
-            >
-              {uploadPanels.excel.description}
-            </p>
-            <div style={{ display: 'flex', gap: 10, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
-              <button
-                style={{
-                  padding: isMobile ? '8px 12px' : '9px 14px',
-                  fontSize: isMobile ? '12px' : '13px',
-                  fontWeight: 500,
-                  color: '#166534',
-                  backgroundColor: '#DCFCE7',
-                  borderRadius: 999,
-                  border: '1px solid #BBF7D0',
-                  cursor: 'pointer'
-                }}
-              >
-                {uploadPanels.excel.templateButton}
-              </button>
-              <button
-                style={{
-                  padding: isMobile ? '8px 14px' : '9px 16px',
-                  fontSize: isMobile ? '12px' : '13px',
-                  fontWeight: 500,
-                  color: '#FFFFFF',
-                  backgroundColor: '#16A34A',
-                  borderRadius: 999,
-                  border: 'none',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8
-                }}
-              >
-                <UploadCloud style={{ width: 16, height: 16 }} />
-                {uploadPanels.excel.uploadButton}
-              </button>
+              {activePanel.helper}
             </div>
           </div>
         </div>
@@ -474,18 +579,20 @@ export default function ImportCenter() {
                 </button>
               ))}
               <button
+                onClick={handleBulkConfirm}
+                disabled={selectedIds.length === 0}
                 style={{
                   padding: isMobile ? '8px 12px' : '8px 14px',
                   fontSize: isMobile ? '11px' : '12px',
                   fontWeight: 500,
                   color: '#FFFFFF',
-                  backgroundColor: '#1E3A5F',
+                  backgroundColor: selectedIds.length > 0 ? '#1E3A5F' : '#94A3B8',
                   borderRadius: 8,
                   border: 'none',
-                  cursor: 'pointer'
+                  cursor: selectedIds.length > 0 ? 'pointer' : 'not-allowed'
                 }}
               >
-                {reviewQueue.confirmButton}
+                Confirm Selected ({selectedIds.length})
               </button>
             </div>
           </div>
@@ -513,7 +620,11 @@ export default function ImportCenter() {
                   }}
                 >
                   <th style={{ width: 32, padding: '10px 8px', textAlign: 'left' }}>
-                    <input type="checkbox" />
+                    <input 
+                        type="checkbox" 
+                        onChange={handleSelectAll}
+                        checked={reviewQueue.rows?.length > 0 && selectedIds.length === reviewQueue.rows.length}
+                    />
                   </th>
                   {reviewQueue.tableHeaders.map((headerLabel: string) => (
                     <th
@@ -543,7 +654,11 @@ export default function ImportCenter() {
                     }}
                   >
                     <td style={{ padding: isMobile ? '8px 6px' : '10px 8px' }}>
-                      <input type="checkbox" />
+                      <input 
+                          type="checkbox" 
+                          checked={selectedIds.includes(String(row.id))}
+                          onChange={() => handleSelectRow(row.id)}
+                      />
                     </td>
                     {/* Extracted data */}
                     <td style={{ padding: isMobile ? '8px 10px' : '10px 12px', verticalAlign: 'top' }}>
@@ -659,6 +774,7 @@ export default function ImportCenter() {
                       {row.actions.map((action: any) => (
                         <button
                           key={action.label}
+                          onClick={() => handleAction(action.label, row)}
                           style={{
                             padding: '8px 12px',
                             fontSize: isMobile ? '11px' : '12px',
@@ -846,6 +962,168 @@ export default function ImportCenter() {
           </div>
         </div>
       </div>
+
+      {showEditModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: 12,
+            padding: 24,
+            width: '100%',
+            maxWidth: 500,
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+          }}>
+            <h2 style={{ margin: '0 0 16px', fontSize: 20, color: '#1E293B' }}>Edit Property</h2>
+            <form onSubmit={handleEditSubmit}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500, color: '#475569' }}>
+                  Address
+                </label>
+                <input
+                  type="text"
+                  value={editFormData.address}
+                  onChange={(e) => setEditFormData({...editFormData, address: e.target.value})}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #CBD5E1', boxSizing: 'border-box' }}
+                />
+              </div>
+              
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500, color: '#475569' }}>
+                  Parcel ID
+                </label>
+                <input
+                  type="text"
+                  value={editFormData.parcel_id}
+                  onChange={(e) => setEditFormData({...editFormData, parcel_id: e.target.value})}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #CBD5E1', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #CBD5E1', background: 'white', color: '#475569', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: '#1E3A5F', color: 'white', cursor: 'pointer' }}
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showUploadModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: 12,
+            padding: 24,
+            width: '100%',
+            maxWidth: 500,
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+          }}>
+            <h2 style={{ margin: '0 0 16px', fontSize: 20, color: '#1E293B' }}>Upload Import</h2>
+            <form onSubmit={handleUploadSubmit}>
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500, color: '#475569' }}>
+                  Import Name (Batch Name)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={uploadFormData.name}
+                  onChange={(e) => setUploadFormData({...uploadFormData, name: e.target.value})}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #CBD5E1', boxSizing: 'border-box' }}
+                  placeholder="e.g. January 2026 List"
+                />
+              </div>
+              
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500, color: '#475569' }}>
+                  Description (Optional)
+                </label>
+                <textarea
+                  value={uploadFormData.description}
+                  onChange={(e) => setUploadFormData({...uploadFormData, description: e.target.value})}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #CBD5E1', boxSizing: 'border-box', minHeight: 80 }}
+                  placeholder="Add notes about this import..."
+                />
+              </div>
+
+              <div style={{ marginBottom: 16 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500, color: '#475569' }}>
+                  Import Date
+                </label>
+                <input
+                  type="date"
+                  value={uploadFormData.date}
+                  onChange={(e) => setUploadFormData({...uploadFormData, date: e.target.value})}
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #CBD5E1', boxSizing: 'border-box' }}
+                />
+              </div>
+
+              <div style={{ marginBottom: 24 }}>
+                <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500, color: '#475569' }}>
+                  Select File
+                </label>
+                <input
+                  type="file"
+                  required
+                  accept={activePanel.acceptedFileTypes || '*/*'}
+                  onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
+                  style={{ width: '100%' }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                <button
+                  type="button"
+                  onClick={() => setShowUploadModal(false)}
+                  style={{ padding: '8px 16px', borderRadius: 6, border: '1px solid #CBD5E1', background: 'white', color: '#475569', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={loading}
+                  style={{ padding: '8px 16px', borderRadius: 6, border: 'none', background: '#1E3A5F', color: 'white', cursor: 'pointer', opacity: loading ? 0.7 : 1 }}
+                >
+                  {loading ? 'Uploading...' : 'Start Upload'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

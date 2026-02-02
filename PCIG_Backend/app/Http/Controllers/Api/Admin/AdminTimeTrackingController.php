@@ -46,8 +46,13 @@ class AdminTimeTrackingController extends Controller
             // Active Workers (unique users with entries this week)
             $activeWorkers = TimeEntry::whereBetween('date', [$startOfWeek, $endOfWeek])->distinct('user_id')->count();
 
-            // Total Cost (This Week) - Placeholder
-            $totalCost = 0; 
+            // Total Cost (This Week)
+            $totalCost = TimeEntry::whereBetween('date', [$startOfWeek, $endOfWeek])
+                ->with('user')
+                ->get()
+                ->sum(function ($entry) {
+                    return $entry->hours * ($entry->user->hourly_rate ?? 0);
+                });
             
             $summaryCards = [
                 [
@@ -102,14 +107,43 @@ class AdminTimeTrackingController extends Controller
             ];
 
             // 5. Time Entries Table
-            $entries = TimeEntry::with(['user', 'property'])
-                ->latest('date')
-                ->limit(50)
+            $query = TimeEntry::with(['user', 'property'])->latest('date');
+
+            // Apply Filters
+            if ($request->filled('worker') && $request->worker !== 'All') {
+                $query->whereHas('user', function ($q) use ($request) {
+                    $q->where('name', $request->worker);
+                });
+            }
+
+            if ($request->filled('project') && $request->project !== 'All') {
+                $query->whereHas('property', function ($q) use ($request) {
+                    $q->where('address', $request->project);
+                });
+            }
+
+            if ($request->filled('status') && $request->status !== 'All') {
+                $query->where('status', $request->status);
+            }
+
+            if ($request->filled('search')) {
+                $search = $request->search;
+                $query->where(function ($q) use ($search) {
+                    $q->whereHas('user', function ($u) use ($search) {
+                        $u->where('name', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('property', function ($p) use ($search) {
+                        $p->where('address', 'like', "%{$search}%");
+                    })
+                    ->orWhere('description', 'like', "%{$search}%");
+                });
+            }
+
+            $entries = $query->limit(50)
                 ->get()
                 ->map(function ($entry) {
-                    // Mock status/rate if not in DB
                     $status = $entry->status ?? 'Approved'; 
-                    $rate = optional($entry->user)->hourly_rate ?? 35; // Fallback rate
+                    $rate = $entry->user->hourly_rate ?? 0;
                     $total = $entry->hours * $rate;
                     
                     $statusColors = [
@@ -170,5 +204,75 @@ class AdminTimeTrackingController extends Controller
             \Illuminate\Support\Facades\Log::error('TimeTracking Dashboard Error: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
+    }
+
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'user_id' => 'required|exists:users,id',
+            'property_id' => 'required|exists:properties,id',
+            'date' => 'required|date',
+            'hours' => 'required|numeric|min:0.1',
+            'description' => 'nullable|string',
+        ]);
+
+        $entry = TimeEntry::create([
+            'user_id' => $validated['user_id'],
+            'property_id' => $validated['property_id'],
+            'date' => $validated['date'],
+            'hours' => $validated['hours'],
+            'description' => $validated['description'],
+            'status' => 'Pending',
+            'billable' => true,
+        ]);
+
+        return response()->json(['message' => 'Time entry created successfully', 'entry' => $entry]);
+    }
+
+    public function approve($id): JsonResponse
+    {
+        $entry = TimeEntry::findOrFail($id);
+        $entry->update(['status' => 'Approved']);
+        return response()->json(['message' => 'Time entry approved']);
+    }
+
+    public function reject($id): JsonResponse
+    {
+        $entry = TimeEntry::findOrFail($id);
+        $entry->update(['status' => 'Rejected']);
+        return response()->json(['message' => 'Time entry rejected']);
+    }
+
+    public function export(): \Symfony\Component\HttpFoundation\StreamedResponse
+    {
+        return response()->streamDownload(function () {
+            $handle = fopen('php://output', 'w');
+            fputcsv($handle, ['ID', 'Worker', 'Project', 'Date', 'Hours', 'Rate', 'Total', 'Status', 'Description']);
+
+            TimeEntry::with(['user', 'property'])->chunk(100, function ($entries) use ($handle) {
+                foreach ($entries as $entry) {
+                    $rate = $entry->user->hourly_rate ?? 0;
+                    fputcsv($handle, [
+                        $entry->id,
+                        $entry->user->name ?? 'Unknown',
+                        $entry->property->address ?? 'General',
+                        $entry->date->format('Y-m-d'),
+                        $entry->hours,
+                        $rate,
+                        $entry->hours * $rate,
+                        $entry->status,
+                        $entry->description
+                    ]);
+                }
+            });
+
+            fclose($handle);
+        }, 'time-tracking-report-' . now()->format('Y-m-d') . '.csv');
+    }
+
+    public function listUsersDropdown(): JsonResponse
+    {
+        $users = User::select('id', 'name')->orderBy('name')->get();
+        return response()->json($users);
     }
 }

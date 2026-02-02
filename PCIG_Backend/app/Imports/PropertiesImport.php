@@ -16,13 +16,23 @@ class PropertiesImport implements ToModel, WithHeadingRow
     */
     public function model(array $row)
     {
+        // Normalize keys to lowercase
+        $row = array_change_key_case($row, CASE_LOWER);
+
+        // Normalize zip code
+        if (!isset($row['zip_code']) && isset($row['zip'])) {
+            $row['zip_code'] = $row['zip'];
+        }
+
         // Simple validation or default values
         $purchasePrice = isset($row['purchase_price']) ? floatval(str_replace(['$', ','], '', $row['purchase_price'])) : 0;
         $totalShares = isset($row['total_shares']) ? intval($row['total_shares']) : 100;
         
         return new Property([
             'parcel_id'       => $row['parcel_id'],
+            'property_code'   => $row['parcel_id'] ?? uniqid('PROP-'),
             'address'         => $row['address'],
+            'location'        => isset($row['city']) && isset($row['state']) ? $row['city'] . ', ' . $row['state'] : ($row['city'] ?? 'Unknown'),
             'city'            => $row['city'],
             'county'          => $row['county'],
             'state'           => $row['state'],

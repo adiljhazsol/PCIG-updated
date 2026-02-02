@@ -1,0 +1,6 @@
+parcel_id,address,city,county,state,zip,purchase_price,current_value
+12345001,101 Maple Ave,Atlanta,Fulton,GA,30301,150000,200000
+12345002,202 Oak St,Decatur,DeKalb,GA,30030,120000,180000
+12345003,303 Pine Ln,Marietta,Cobb,GA,30060,180000,250000
+12345004,404 Cedar Blvd,Sandy Springs,Fulton,GA,30328,220000,300000
+12345005,505 Elm Dr,Alpharetta,Fulton,GA,30004,250000,350000

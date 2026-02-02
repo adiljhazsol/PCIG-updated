@@ -27,15 +27,22 @@ class Property extends Model
         'workflow_stage',
         'purchase_price',
         'current_value',
+        'est_value',
         'roi',
         'total_shares',
         'available_shares',
         'price_per_share',
         'purchase_date',
         'owner',
+        'owner_phone',
         'assigned_user_id',
         'tax_year',
         'sheriff_file_number',
+        'description',
+        'legal_description',
+        'zoning',
+        'lot_size',
+        'year_built',
     ];
 
     public function assignedUser()
@@ -46,10 +53,20 @@ class Property extends Model
     protected $casts = [
         'purchase_price' => 'decimal:2',
         'current_value' => 'decimal:2',
+        'assessed_value' => 'decimal:2',
+        'est_value' => 'decimal:2',
         'roi' => 'decimal:2',
         'price_per_share' => 'decimal:2',
         'purchase_date' => 'date',
+        'redemption_deadline' => 'date',
     ];
+
+    protected $appends = ['redemption_deadline'];
+
+    public function getRedemptionDeadlineAttribute()
+    {
+        return $this->redemptionTracking?->redemption_deadline;
+    }
 
     public function fifaImport()
     {
@@ -96,6 +113,11 @@ class Property extends Model
         return $this->hasOne(SheriffSale::class);
     }
 
+    public function efileCancellations()
+    {
+        return $this->hasMany(EfileCancellation::class);
+    }
+
     public function redemptionTracking()
     {
         return $this->hasOne(RedemptionTracking::class);
@@ -134,5 +156,20 @@ class Property extends Model
     public function taxAppeals()
     {
         return $this->hasMany(TaxAppeal::class);
+    }
+
+    public function deadlines()
+    {
+        return $this->hasMany(Deadline::class);
+    }
+
+    public function interestCalculations()
+    {
+        return $this->hasMany(InterestCalculation::class);
+    }
+
+    public function notices()
+    {
+        return $this->hasMany(Notice::class);
     }
 }

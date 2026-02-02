@@ -11,16 +11,18 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('reo_offers', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('reo_property_id')->constrained('reo_properties')->cascadeOnDelete();
-            $table->decimal('offer_amount', 10, 2);
-            $table->string('buyer_info');
-            $table->date('offer_date')->nullable();
-            $table->enum('status', ['pending', 'accepted', 'rejected', 'counter'])->default('pending')->index();
-            $table->text('notes')->nullable();
-            $table->timestamps();
-        });
+        if (!Schema::hasTable('reo_offers')) {
+            Schema::create('reo_offers', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('reo_property_id')->constrained('reo_properties')->cascadeOnDelete();
+                $table->decimal('offer_amount', 10, 2);
+                $table->string('buyer_info');
+                $table->date('offer_date')->nullable();
+                $table->enum('status', ['pending', 'accepted', 'rejected', 'counter'])->default('pending')->index();
+                $table->text('notes')->nullable();
+                $table->timestamps();
+            });
+        }
     }
 
     /**

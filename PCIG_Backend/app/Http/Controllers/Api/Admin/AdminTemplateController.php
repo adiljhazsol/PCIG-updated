@@ -24,7 +24,7 @@ class AdminTemplateController extends Controller
     {
         $request->validate([
             'name' => 'required|string|max:255',
-            'type' => 'required|in:notice,contract,letter,email',
+            'type' => 'required|in:notice,contract,letter,email,document',
             'content' => 'required|string',
             'variables' => 'nullable|array',
         ]);
@@ -56,7 +56,7 @@ class AdminTemplateController extends Controller
 
         $request->validate([
             'name' => 'sometimes|string|max:255',
-            'type' => 'sometimes|in:notice,contract,letter,email',
+            'type' => 'sometimes|in:notice,contract,letter,email,document',
             'content' => 'sometimes|string',
             'variables' => 'nullable|array',
         ]);

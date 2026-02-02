@@ -88,17 +88,23 @@ export default function InvestorFundDetail() {
                         name: apiFund.name,
                         status: apiFund.status.charAt(0).toUpperCase() + apiFund.status.slice(1),
                         description: apiFund.description,
+                        imageUrl: apiFund.image_url,
                         investmentMetrics: {
-                            strategy: apiFund.description || 'General Strategy',
+                            strategy: apiFund.strategy || 'General Strategy',
                             minInvestment: `$${Number(apiFund.min_investment).toLocaleString()}`,
-                            lockUp: '12 Months', // This could be added to DB schema later
-                            hardCap: `$${Number(apiFund.total_assets * 2).toLocaleString()}`, // Estimate or add to DB
+                            lockUp: apiFund.lock_up_period || 'N/A',
+                            hardCap: apiFund.cap ? `$${Number(apiFund.cap).toLocaleString()}` : 'Uncapped',
+                            managementFee: apiFund.management_fee ? `${apiFund.management_fee}%` : 'N/A',
                         },
                         fundPerformance: {
-                            targetIRR: '12-15%', // This could be added to DB schema later
-                            currentIRR: '13.2%', // This would come from backend logic
+                            targetIRR: apiFund.target_irr || 'N/A',
+                            currentIRR: apiFund.performance_metric ? `${apiFund.performance_metric}%` : 'N/A',
                             distributionsYTD: '$0', // This would come from distributions table
                             aum: `$${Number(apiFund.total_assets).toLocaleString()}`
+                        },
+                        documents: {
+                            prospectus: apiFund.prospectus_url,
+                            termSheet: apiFund.term_sheet_url
                         }
                     });
                 }
@@ -186,6 +192,7 @@ export default function InvestorFundDetail() {
                             </div>
                         </div>
                         <div style={{ display: 'flex', gap: 12 }}>
+                            {fundDetails.status !== 'Coming Soon' && (
                             <button 
                                 onClick={() => setInvestmentModalOpen(true)}
                                 style={{
@@ -200,6 +207,23 @@ export default function InvestorFundDetail() {
                             }}>
                                 Invest Now
                             </button>
+                            )}
+                            {fundDetails.status === 'Coming Soon' && (
+                                <button 
+                                    disabled
+                                    style={{
+                                    backgroundColor: '#94a3b8',
+                                    color: '#FFFFFF',
+                                    border: 'none',
+                                    padding: '10px 20px',
+                                    borderRadius: 8,
+                                    fontWeight: 600,
+                                    fontSize: 14,
+                                    cursor: 'not-allowed'
+                                }}>
+                                    Coming Soon
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -243,11 +267,29 @@ export default function InvestorFundDetail() {
                         {/* Left Column */}
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
+                            {/* Fund Image */}
+                            {fundDetails.imageUrl && (
+                                <div style={{ 
+                                    width: '100%', 
+                                    height: '300px', 
+                                    borderRadius: 12, 
+                                    overflow: 'hidden', 
+                                    border: '1px solid #E2E8F0',
+                                    backgroundColor: '#f1f5f9'
+                                }}>
+                                    <img 
+                                        src={fundDetails.imageUrl} 
+                                        alt={fundDetails.name} 
+                                        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                    />
+                                </div>
+                            )}
+
                             {/* Performance Summary */}
                             <div style={{ backgroundColor: '#fff', borderRadius: 12, border: '1px solid #E2E8F0', padding: 24 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
                                     <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: 0 }}>Performance Summary</h3>
-                                    <span style={{ fontSize: 12, color: '#64748B' }}>Last updated: Oct 24, 2024</span>
+                                    <span style={{ fontSize: 12, color: '#64748B' }}>Last updated: {new Date().toLocaleDateString()}</span>
                                 </div>
                                 <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)', gap: 24 }}>
                                     <div>
@@ -268,17 +310,9 @@ export default function InvestorFundDetail() {
                             {/* Fund Strategy/Description */}
                             <div style={{ backgroundColor: '#fff', borderRadius: 12, border: '1px solid #E2E8F0', padding: 24 }}>
                                 <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', marginTop: 0, marginBottom: 16 }}>Fund Strategy</h3>
-                                <p style={{ fontSize: 15, lineHeight: 1.6, color: '#334155', margin: 0 }}>
-                                    This fund focuses on high-yield tax deed redemptions in primary markets across Florida and Texas.
-                                    The strategy targets shorter hold periods (12-18 months) with a focus on liquidity and capital preservation.
-                                    <br /><br />
-                                    Key Objectives:
+                                <p style={{ fontSize: 15, lineHeight: 1.6, color: '#334155', margin: 0, whiteSpace: 'pre-line' }}>
+                                    {fundDetails.description || "No description available."}
                                 </p>
-                                <ul style={{ fontSize: 15, lineHeight: 1.6, color: '#334155', paddingLeft: 20, margin: '16px 0 0 0' }}>
-                                    <li>Acquire tax liens with high statutory interest rates.</li>
-                                    <li>Manage the redemption process to maximize returns.</li>
-                                    <li>Liquidate REO properties efficiently if redemption does not occur.</li>
-                                </ul>
                             </div>
 
                         </div>
@@ -300,7 +334,7 @@ export default function InvestorFundDetail() {
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #F1F5F9', paddingBottom: 12 }}>
                                         <span style={{ color: '#64748B', fontSize: 14 }}>Management Fee</span>
-                                        <span style={{ color: '#0F172A', fontWeight: 600, fontSize: 14 }}>2.0%</span>
+                                        <span style={{ color: '#0F172A', fontWeight: 600, fontSize: 14 }}>{fundDetails.investmentMetrics.managementFee}</span>
                                     </div>
                                     <div style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 0 }}>
                                         <span style={{ color: '#64748B', fontSize: 14 }}>Fund Size</span>
@@ -321,12 +355,30 @@ export default function InvestorFundDetail() {
                                     </button>
                                 </div>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                    {['Offering Memorandum', 'Subscription Agreement', 'W-9 Form'].map((doc, idx) => (
-                                        <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px', border: '1px solid #F1F5F9', borderRadius: 8 }}>
-                                            <FileText size={16} color="#64748B" />
-                                            <span style={{ fontSize: 13, color: '#0F172A', fontWeight: 500 }}>{doc}</span>
+                                    {[
+                                        { name: 'Prospectus', url: fundDetails.documents?.prospectus },
+                                        { name: 'Term Sheet', url: fundDetails.documents?.termSheet }
+                                    ].filter(doc => doc.url).length > 0 ? (
+                                        [
+                                            { name: 'Prospectus', url: fundDetails.documents?.prospectus },
+                                            { name: 'Term Sheet', url: fundDetails.documents?.termSheet }
+                                        ].filter(doc => doc.url).map((doc, idx) => (
+                                            <a 
+                                                key={idx} 
+                                                href={doc.url}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                style={{ textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 12, padding: '12px', border: '1px solid #F1F5F9', borderRadius: 8, color: 'inherit' }}
+                                            >
+                                                <FileText size={16} color="#64748B" />
+                                                <span style={{ fontSize: 13, color: '#0F172A', fontWeight: 500 }}>{doc.name}</span>
+                                            </a>
+                                        ))
+                                    ) : (
+                                        <div style={{ padding: '12px', textAlign: 'center', color: '#64748B', fontSize: 13 }}>
+                                            No documents available
                                         </div>
-                                    ))}
+                                    )}
                                 </div>
                             </div>
 
@@ -358,18 +410,65 @@ export default function InvestorFundDetail() {
                     <div style={{ backgroundColor: '#fff', borderRadius: 12, border: '1px solid #E2E8F0', padding: 24 }}>
                         <h3 style={{ fontSize: 18, fontWeight: 700, color: '#0F172A', margin: '0 0 24px 0' }}>Fund Documents</h3>
                         <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
-                            {['Offering Memorandum', 'Subscription Agreement', 'Operating Agreement', 'W-9 Form', 'Investor Presentation', 'Q3 2024 Report', 'Q2 2024 Report', 'Q1 2024 Report'].map((doc, idx) => (
+                            {/* Render Actual Documents */}
+                            {fundDetails.documents?.prospectus && (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', border: '1px solid #E2E8F0', borderRadius: 8, backgroundColor: '#fff' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <div style={{ backgroundColor: '#F1F5F9', padding: 10, borderRadius: 8 }}>
+                                            <FileText size={20} color="#1E3A5F" />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', marginBottom: 2 }}>Prospectus</div>
+                                            <div style={{ fontSize: 12, color: '#64748B' }}>PDF Document</div>
+                                        </div>
+                                    </div>
+                                    <a 
+                                        href={fundDetails.documents.prospectus} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        style={{ color: '#1E3A5F', border: '1px solid #E2E8F0', backgroundColor: '#fff', padding: '6px 12px', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer', textDecoration: 'none' }}
+                                    >
+                                        Download
+                                    </a>
+                                </div>
+                            )}
+
+                            {fundDetails.documents?.termSheet && (
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', border: '1px solid #E2E8F0', borderRadius: 8, backgroundColor: '#fff' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                                        <div style={{ backgroundColor: '#F1F5F9', padding: 10, borderRadius: 8 }}>
+                                            <FileText size={20} color="#1E3A5F" />
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', marginBottom: 2 }}>Term Sheet</div>
+                                            <div style={{ fontSize: 12, color: '#64748B' }}>PDF Document</div>
+                                        </div>
+                                    </div>
+                                    <a 
+                                        href={fundDetails.documents.termSheet} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        style={{ color: '#1E3A5F', border: '1px solid #E2E8F0', backgroundColor: '#fff', padding: '6px 12px', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer', textDecoration: 'none' }}
+                                    >
+                                        Download
+                                    </a>
+                                </div>
+                            )}
+
+                            {/* Render Mock Documents if no actual documents (or as example) - Optional: Remove if not needed */}
+                            {/* Only show mock if no real documents to avoid empty state, or keep them as "Sample Documents" */}
+                            {!fundDetails.documents?.prospectus && !fundDetails.documents?.termSheet && ['Offering Memorandum', 'Subscription Agreement', 'W-9 Form'].map((doc, idx) => (
                                 <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', border: '1px solid #E2E8F0', borderRadius: 8, backgroundColor: '#fff' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                         <div style={{ backgroundColor: '#F1F5F9', padding: 10, borderRadius: 8 }}>
                                             <FileText size={20} color="#1E3A5F" />
                                         </div>
                                         <div>
-                                            <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', marginBottom: 2 }}>{doc}</div>
-                                            <div style={{ fontSize: 12, color: '#64748B' }}>PDF • 2.4 MB</div>
+                                            <div style={{ fontSize: 14, fontWeight: 600, color: '#0F172A', marginBottom: 2 }}>{doc} (Sample)</div>
+                                            <div style={{ fontSize: 12, color: '#64748B' }}>PDF • Sample</div>
                                         </div>
                                     </div>
-                                    <button style={{ color: '#1E3A5F', border: '1px solid #E2E8F0', backgroundColor: '#fff', padding: '6px 12px', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'pointer' }}>
+                                    <button style={{ color: '#94A3B8', border: '1px solid #E2E8F0', backgroundColor: '#fff', padding: '6px 12px', borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: 'not-allowed' }} disabled>
                                         Download
                                     </button>
                                 </div>

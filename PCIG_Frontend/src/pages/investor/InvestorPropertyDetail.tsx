@@ -1,30 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Link, useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
-    Share2,
-    Edit,
-    MoreVertical,
     AlertCircle,
     Clock,
     CheckCircle2,
-    Download,
-    Upload,
     FileText,
     File,
     Gavel,
     Mail,
     RefreshCw,
     DollarSign,
-    Calendar,
-    ExternalLink,
-    Printer,
-    FileBarChart,
-    Key,
-    MapPin,
     Loader2
 } from 'lucide-react';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
 import InvestorNav from '../../components/investor/InvestorNav';
+import InvestModal from '../../components/investor/InvestModal';
 import api from '../../services/api';
 
 // Investor Property Detail Screen
@@ -38,26 +28,91 @@ export default function InvestorPropertyDetail() {
     // State for dynamic data
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [downloading, setDownloading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [isProcessPayoffModalOpen, setIsProcessPayoffModalOpen] = useState(false);
+    const [isInvestModalOpen, setIsInvestModalOpen] = useState(false);
+
+    const handleInvestClick = () => {
+        setIsInvestModalOpen(true);
+    };
+
+    const handleGeneratePayoffLetter = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        
+        if (downloading) return;
+
+        try {
+            setDownloading(true);
+            const targetId = (id || "1").replace('PROP-', '');
+            const response = await api.get(`/investor/properties/${targetId}/payoff-letter`, {
+                responseType: 'blob'
+            });
+
+            // Verify content type
+            const contentType = response.headers['content-type'];
+            if (contentType && !contentType.includes('application/pdf')) {
+                // Try to read the error message if it's JSON
+                if (contentType.includes('application/json')) {
+                    const text = await response.data.text();
+                    console.error('Backend returned JSON error:', text);
+                    try {
+                        const json = JSON.parse(text);
+                        throw new Error(json.error || json.message || 'Server error');
+                    } catch (e) {
+                        throw new Error('Server returned error: ' + text);
+                    }
+                }
+                throw new Error('Received invalid content type: ' + contentType);
+            }
+
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `payoff_letter_${targetId}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            
+            // Cleanup with delay
+            setTimeout(() => {
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+            }, 100);
+        } catch (err: any) {
+            console.error('Failed to download payoff letter', err);
+            // Alert removed as per user request (false positives occurring despite successful download)
+            // alert(`Failed to download payoff letter: ${err.message || err}`);
+        } finally {
+            setDownloading(false);
+        }
+    };
+
+    const handleProcessPayoff = () => {
+        setIsProcessPayoffModalOpen(true);
+    };
+
+    const fetchData = async (background = false) => {
+        try {
+            if (!background) setLoading(true);
+            // Use provided ID or fallback to a default if testing without routing ID
+            // For production, we should handle the 'undefined' id case gracefully or redirect
+            const targetId = id || "1"; // Defaulting to 1 for testing if no ID in URL
+            
+            const response = await api.get(`/investor/properties/${targetId}/dashboard-data`);
+            setData(response.data.data);
+            setError(null);
+        } catch (err) {
+            console.error('Error fetching property detail:', err);
+            if (!background) setError('Failed to load property details. Please try again.');
+        } finally {
+            if (!background) setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const fetchData = async () => {
-            try {
-                // Use provided ID or fallback to a default if testing without routing ID
-                // For production, we should handle the 'undefined' id case gracefully or redirect
-                const targetId = id || "1"; // Defaulting to 1 for testing if no ID in URL
-                
-                const response = await api.get(`/investor/properties/${targetId}/dashboard-data`);
-                setData(response.data.data);
-                setError(null);
-            } catch (err) {
-                console.error('Error fetching property detail:', err);
-                setError('Failed to load property details. Please try again.');
-            } finally {
-                setLoading(false);
-            }
-        };
-
         fetchData();
     }, [id]);
 
@@ -91,15 +146,16 @@ export default function InvestorPropertyDetail() {
     }
 
     const {
-        header,
-        alerts,
-        redemptionEngine,
-        workflowTimeline,
+        header = {},
+        alerts = [],
+        redemptionEngine = {},
+        workflowTimeline = [],
         // assetTransactions,
-        moduleConnections,
-        documents,
-        activityLog,
-        propertyInfo
+        moduleConnections = [],
+        documents = { count: 0, folders: [] },
+        activityLog = [],
+        propertyInfo = {},
+        investmentDetails
     } = data;
 
     const getModuleBadgeColor = (color: string) => {
@@ -240,7 +296,7 @@ export default function InvestorPropertyDetail() {
                                 }}>
                                     <div style={{ fontSize: 12, fontWeight: 700, color: '#991B1B', textTransform: 'uppercase', marginBottom: 8, letterSpacing: '0.05em' }}>Time Remaining</div>
                                     <div style={{ fontSize: isMobile ? 18 : 32, fontWeight: 700, color: '#991B1B', wordBreak: 'break-word', lineHeight: 1.2 }}>
-                                        {redemptionEngine.countdown.days} days, {redemptionEngine.countdown.hours} hours, {redemptionEngine.countdown.minutes} mins
+                                        {redemptionEngine.countdown?.days ?? 0} days, {redemptionEngine.countdown?.hours ?? 0} hours, {redemptionEngine.countdown?.minutes ?? 0} mins
                                     </div>
                                     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 4, backgroundColor: '#FECACA' }}>
                                         <div style={{ width: '35%', height: '100%', backgroundColor: '#DC2626' }} />
@@ -268,20 +324,85 @@ export default function InvestorPropertyDetail() {
                                     </div>
                                     <div>
                                         <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Daily Accrual</div>
-                                        <div style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>{redemptionEngine.dailyAccrual.amount} <span style={{ fontWeight: 400, color: '#64748B' }}>{redemptionEngine.dailyAccrual.per}</span></div>
+                                        <div style={{ fontSize: 14, fontWeight: 700, color: '#0F172A' }}>{redemptionEngine.dailyAccrual?.amount ?? 'N/A'} <span style={{ fontWeight: 400, color: '#64748B' }}>{redemptionEngine.dailyAccrual?.per ?? ''}</span></div>
                                     </div>
                                 </div>
 
-                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 16 }}>
-                                    <button style={{ backgroundColor: '#1E3A5F', color: '#fff', border: 'none', padding: '12px', borderRadius: 6, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
-                                        Generate Payoff Letter
+                                <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr 1fr', gap: 16 }}>
+                                    <button 
+                                        onClick={handleGeneratePayoffLetter} 
+                                        disabled={downloading}
+                                        style={{ 
+                                            backgroundColor: downloading ? '#94A3B8' : '#1E3A5F', 
+                                            color: '#fff', 
+                                            border: 'none', 
+                                            padding: '12px', 
+                                            borderRadius: 6, 
+                                            fontWeight: 600, 
+                                            fontSize: 14, 
+                                            cursor: downloading ? 'not-allowed' : 'pointer' 
+                                        }}
+                                    >
+                                        {downloading ? 'Generating...' : 'Generate Payoff Letter'}
                                     </button>
-                                    <button style={{ backgroundColor: '#fff', color: '#0F172A', border: '1px solid #E2E8F0', padding: '12px', borderRadius: 6, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                                    <button onClick={handleProcessPayoff} style={{ backgroundColor: '#fff', color: '#0F172A', border: '1px solid #E2E8F0', padding: '12px', borderRadius: 6, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
                                         Process Payoff
+                                    </button>
+                                    <button onClick={handleInvestClick} style={{ backgroundColor: '#10B981', color: '#fff', border: 'none', padding: '12px', borderRadius: 6, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                                        Invest
                                     </button>
                                 </div>
                             </div>
                         </div>
+
+                        {/* Process Payoff Modal (Investor) */}
+                        {isProcessPayoffModalOpen && (
+                            <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+                                <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, width: '100%', maxWidth: 500, margin: 16 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                                        <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Process Payoff</h3>
+                                        <button onClick={() => setIsProcessPayoffModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                            <AlertCircle size={20} color="#64748B" style={{ transform: 'rotate(45deg)' }} />
+                                        </button>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                        <p style={{ color: '#64748B', lineHeight: 1.5, margin: 0 }}>
+                                            To process the payoff for this property, please refer to the payment instructions in the Payoff Letter.
+                                        </p>
+                                        
+                                        <div style={{ backgroundColor: '#F8FAFC', padding: 16, borderRadius: 6, border: '1px solid #E2E8F0' }}>
+                                            <h4 style={{ margin: '0 0 8px 0', fontSize: 14, fontWeight: 600, color: '#0F172A' }}>Payment Instructions Summary</h4>
+                                            <p style={{ fontSize: 13, color: '#64748B', margin: 0 }}>
+                                                Make cashier's check or money order payable to:<br/>
+                                                <strong>PCIG Holdings, LLC</strong><br/>
+                                                123 Investment Way, Suite 100<br/>
+                                                Atlanta, GA 30303
+                                            </p>
+                                        </div>
+
+                                        <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                                            <button onClick={() => setIsProcessPayoffModalOpen(false)} style={{ flex: 1, padding: 10, borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', fontWeight: 600, cursor: 'pointer' }}>Close</button>
+                                            <button 
+                                                onClick={handleGeneratePayoffLetter} 
+                                                disabled={downloading}
+                                                style={{ 
+                                                    flex: 1, 
+                                                    padding: 10, 
+                                                    borderRadius: 6, 
+                                                    background: downloading ? '#94A3B8' : '#0F172A', 
+                                                    color: '#fff', 
+                                                    border: 'none', 
+                                                    fontWeight: 600,
+                                                    cursor: downloading ? 'not-allowed' : 'pointer'
+                                                }}
+                                            >
+                                                {downloading ? 'Downloading...' : 'Download Payoff Letter'}
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
 
                         {/* Workflow Timeline */}
                         <div style={{ backgroundColor: '#fff', borderRadius: 8, border: '1px solid #E2E8F0', maxWidth: '100%', boxSizing: 'border-box', width: '100%' }}>
@@ -443,6 +564,18 @@ export default function InvestorPropertyDetail() {
                     </div>
                 </div>
             </div>
+
+            {investmentDetails && (
+                <InvestModal
+                    isOpen={isInvestModalOpen}
+                    onClose={() => setIsInvestModalOpen(false)}
+                    property={investmentDetails}
+                    onSuccess={() => {
+                    // Refresh data but do not close modal (InvestModal handles success view)
+                    fetchData(true);
+                }}
+                />
+            )}
         </div>
     );
 }

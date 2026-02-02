@@ -11,19 +11,21 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('redemption_trackings', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('property_id')->constrained()->cascadeOnDelete();
-            $table->date('redemption_deadline');
-            $table->enum('status', ['pending', 'redeemed', 'expired'])->default('pending')->index();
-            $table->date('redeemed_at')->nullable();
-            $table->decimal('redemption_amount', 15, 2)->nullable();
-            $table->text('notes')->nullable();
-            $table->timestamps();
-            
-            $table->index(['property_id', 'status']);
-            $table->index('redemption_deadline');
-        });
+        if (!Schema::hasTable('redemption_trackings')) {
+            Schema::create('redemption_trackings', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('property_id')->constrained()->cascadeOnDelete();
+                $table->date('redemption_deadline');
+                $table->enum('status', ['pending', 'redeemed', 'expired'])->default('pending')->index();
+                $table->date('redeemed_at')->nullable();
+                $table->decimal('redemption_amount', 15, 2)->nullable();
+                $table->text('notes')->nullable();
+                $table->timestamps();
+                
+                $table->index(['property_id', 'status']);
+                $table->index('redemption_deadline');
+            });
+        }
     }
 
     /**

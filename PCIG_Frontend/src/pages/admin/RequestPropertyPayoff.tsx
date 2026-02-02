@@ -1,4 +1,4 @@
-import { CSSProperties, useState, useEffect } from 'react';
+import { CSSProperties, useState, useEffect, useRef } from 'react';
 import {
   CheckCircle2,
   ChevronRight,
@@ -21,6 +21,7 @@ interface PayoffHeader {
 }
 
 interface SelectedProperty {
+  id?: number;
   address: string;
   parcelId: string;
   county: string;
@@ -64,6 +65,8 @@ export default function RequestPropertyPayoff() {
   const [zipCode, setZipCode] = useState('');
   const [additionalNotes, setAdditionalNotes] = useState('');
   const [certifyChecked, setCertifyChecked] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -126,6 +129,12 @@ export default function RequestPropertyPayoff() {
     overflowX: 'hidden'
   };
 
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.files && event.target.files[0]) {
+      setSelectedFile(event.target.files[0]);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!relationship || !firstName || !lastName || !email || !phone) {
       alert('Please fill in all required fields.');
@@ -139,21 +148,30 @@ export default function RequestPropertyPayoff() {
 
     setLoading(true);
     try {
-      await api.post('/admin/payoff/request', {
-        relationship,
-        firstName,
-        lastName,
-        email,
-        phone,
-        mailingAddress,
-        city,
-        state,
-        zipCode,
-        additionalNotes,
-        propertyId: selectedProperty.parcelId // Assuming parcelId is the identifier
+      const formData = new FormData();
+      formData.append('property_id', selectedProperty.id ? selectedProperty.id.toString() : '1'); // Fallback to 1 if missing
+      formData.append('requester_name', `${firstName} ${lastName}`);
+      formData.append('requester_email', email);
+      formData.append('requester_phone', phone);
+      formData.append('relationship', relationship);
+      formData.append('mailing_address', mailingAddress);
+      formData.append('city', city);
+      formData.append('state', state);
+      formData.append('zip', zipCode);
+      formData.append('additional_notes', additionalNotes);
+      
+      if (selectedFile) {
+        formData.append('id_file', selectedFile);
+      }
+
+      await api.post('/admin/payoff/owner', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
       });
+      
       alert('Payoff request submitted successfully!');
-      // Reset form or redirect
+      // Reset form
       setRelationship('');
       setFirstName('');
       setLastName('');
@@ -165,6 +183,7 @@ export default function RequestPropertyPayoff() {
       setZipCode('');
       setAdditionalNotes('');
       setCertifyChecked(false);
+      setSelectedFile(null);
       setLoading(false);
     } catch (err) {
       console.error('Error submitting request:', err);
@@ -350,6 +369,7 @@ export default function RequestPropertyPayoff() {
                   </h2>
                 </div>
                 <button
+                  onClick={() => alert('Property search functionality coming soon.')}
                   style={{
                     fontSize: `clamp(12px, 1.5vw, 14px)`,
                     fontWeight: 500,
@@ -750,7 +770,19 @@ export default function RequestPropertyPayoff() {
               >
                 Upload Driver's License or Government ID
               </p>
+              <input
+                type="file"
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={handleFileChange}
+              />
               <div
+                onClick={() => {
+                  if (fileInputRef.current) {
+                    fileInputRef.current.click();
+                  }
+                }}
                 style={{
                   border: '2px dashed #CBD5E1',
                   borderRadius: 12,
@@ -769,7 +801,7 @@ export default function RequestPropertyPayoff() {
               >
                 <Upload style={{ width: `clamp(40px, 5vw, 48px)`, height: `clamp(40px, 5vw, 48px)`, color: '#94A3B8', margin: '0 auto 16px' }} />
                 <div style={{ fontSize: `clamp(13px, 1.5vw, 14px)`, fontWeight: 500, color: '#475569', marginBottom: 4 }}>
-                  Click to upload or drag and drop
+                  {selectedFile ? selectedFile.name : 'Click to upload or drag and drop'}
                 </div>
                 <div style={{ fontSize: `clamp(11px, 1.3vw, 12px)`, color: '#94A3B8' }}>
                   PDF, PNG, JPG (Max 10MB)

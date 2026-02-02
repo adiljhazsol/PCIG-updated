@@ -58,11 +58,7 @@ export default function FIFANewImport() {
       if (batchName) formData.append('batchName', batchName);
       if (notes) formData.append('notes', notes);
 
-      await api.post('/admin/fifa/import', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
+      await api.post('/admin/fifa/import', formData);
 
       navigate('/admin/properties/fifa-import');
     } catch (error: any) {

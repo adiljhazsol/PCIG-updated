@@ -12,6 +12,7 @@ class SurplusFund extends Model
     use HasFactory, SoftDeletes;
 
     protected $fillable = [
+        'case_number',
         'property_id',
         'amount',
         'claim_filed_date',
@@ -35,5 +36,10 @@ class SurplusFund extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function contacts()
+    {
+        return $this->hasMany(SurplusFundContact::class);
     }
 }

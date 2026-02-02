@@ -84,6 +84,7 @@ class AdminExpenseController extends Controller
         }
 
         $expenses = $query->orderBy('date', 'desc')
+            ->distinct()
             ->limit(20) // Increased limit for better visibility or could be paginated
             ->get()
             ->map(function ($expense) {
@@ -102,11 +103,13 @@ class AdminExpenseController extends Controller
 
         // 3. Filters
         $properties = Property::orderBy('address')->pluck('address')->toArray();
+        $propertiesList = Property::select('id', 'address')->orderBy('address')->get();
         $categories = Expense::distinct('category')->pluck('category')->map(fn($c) => ucfirst($c))->toArray();
 
         // Construct Response
         return response()->json([
             'expenseInputShareAllocation' => [
+                'propertiesList' => $propertiesList,
                 'header' => [
                     'title' => 'Expense Input & Share Allocation',
                     'subtitle' => 'Manage expenses and allocations',
@@ -229,11 +232,119 @@ class AdminExpenseController extends Controller
             'created_by' => $request->user()->id,
         ]);
 
-        // Automated Allocation Logic
-        $property = Property::findOrFail($request->property_id);
-        $totalShares = $property->total_shares > 0 ? $property->total_shares : 1; // Avoid division by zero
+        // If explicitly requested to not allocate immediately (e.g. draft), skip.
+        // For now, we keep existing behavior of auto-allocating on create, 
+        // unless we want to change to a strict approval flow.
+        // But since we have an "Approve" button, let's assume we might want to support delayed allocation.
+        // However, to fix the current "Pending" item, we just need the approve method.
+        // We will duplicate the logic or extract it. Let's extract it.
+        $this->calculateAndSaveAllocations($expense);
+
+        return response()->json([
+            'success' => true,
+            'data' => $expense->load('allocations'),
+            'message' => 'Expense recorded and allocated successfully'
+        ], 201);
+    }
+
+    public function approve($id): JsonResponse
+    {
+        $expense = Expense::findOrFail($id);
         
-        // 1. Fetch active investors
+        if ($expense->allocations()->count() > 0) {
+            return response()->json(['message' => 'Expense is already allocated'], 400);
+        }
+
+        $this->calculateAndSaveAllocations($expense);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Expense approved and allocated successfully',
+            'data' => $expense->load('allocations')
+        ]);
+    }
+
+    public function destroy($id): JsonResponse
+    {
+        $expense = Expense::findOrFail($id);
+        $expense->allocations()->delete(); // Delete associated allocations first
+        $expense->delete();
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Expense rejected/deleted successfully'
+        ]);
+    }
+
+    public function import(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt,xlsx',
+        ]);
+
+        $file = $request->file('file');
+        
+        // Simple CSV parsing
+        $data = array_map('str_getcsv', file($file->getRealPath()));
+        $header = array_shift($data); // Assume first row is header
+        
+        // Normalize header keys to lowercase
+        $header = array_map('strtolower', $header);
+
+        $count = 0;
+        $errors = [];
+
+        foreach ($data as $index => $row) {
+            if (count($row) !== count($header)) continue;
+            
+            $row = array_combine($header, $row);
+            
+            try {
+                // Logic to find property by address or ID
+                $property = null;
+                if (!empty($row['property_id'])) {
+                    $property = Property::find($row['property_id']);
+                } elseif (!empty($row['property_address'])) {
+                    $property = Property::where('address', 'LIKE', '%' . $row['property_address'] . '%')->first();
+                } elseif (!empty($row['property'])) {
+                    $property = Property::where('address', 'LIKE', '%' . $row['property'] . '%')->first();
+                }
+
+                if (!$property) {
+                    throw new \Exception("Property not found");
+                }
+
+                $expense = Expense::create([
+                    'property_id' => $property->id,
+                    'amount' => (float) str_replace(['$', ','], '', $row['amount']),
+                    'date' => !empty($row['date']) ? Carbon::parse($row['date']) : now(),
+                    'description' => $row['description'] ?? 'Imported Expense',
+                    'category' => $row['category'] ?? 'Uncategorized',
+                    'allocation_method' => 'ownership_percentage',
+                    'created_by' => $request->user()->id,
+                ]);
+
+                $this->calculateAndSaveAllocations($expense);
+                $count++;
+
+            } catch (\Exception $e) {
+                $errors[] = "Row " . ($index + 2) . ": " . $e->getMessage();
+            }
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Imported $count expenses. " . (count($errors) > 0 ? "Errors: " . implode(', ', $errors) : ""),
+            'imported_count' => $count,
+            'errors' => $errors
+        ]);
+    }
+
+    private function calculateAndSaveAllocations(Expense $expense)
+    {
+        $property = Property::findOrFail($expense->property_id);
+        $totalShares = $property->total_shares > 0 ? $property->total_shares : 1;
+        
         $investments = \App\Models\Investment::where('property_id', $property->id)
             ->where('status', 'active')
             ->get();
@@ -242,7 +353,7 @@ class AdminExpenseController extends Controller
 
         foreach ($investments as $investment) {
             $percentage = ($investment->shares / $totalShares);
-            $allocationAmount = $request->amount * $percentage;
+            $allocationAmount = $expense->amount * $percentage;
             
             ExpenseAllocation::create([
                 'expense_id' => $expense->id,
@@ -254,24 +365,17 @@ class AdminExpenseController extends Controller
             $allocatedShares += $investment->shares;
         }
 
-        // 2. Allocate remaining (unsold) shares to the Platform/Admin
         $remainingShares = $property->total_shares - $allocatedShares;
         if ($remainingShares > 0) {
             $percentage = ($remainingShares / $totalShares);
-            $allocationAmount = $request->amount * $percentage;
+            $allocationAmount = $expense->amount * $percentage;
             
             ExpenseAllocation::create([
                 'expense_id' => $expense->id,
-                'user_id' => $request->user()->id, // Assign to Admin/Creator
+                'user_id' => $expense->created_by, // Assign to Admin/Creator
                 'amount' => round($allocationAmount, 2),
                 'percentage' => round($percentage * 100, 4),
             ]);
         }
-
-        return response()->json([
-            'success' => true,
-            'data' => $expense->load('allocations'),
-            'message' => 'Expense recorded and allocated successfully'
-        ], 201);
     }
 }

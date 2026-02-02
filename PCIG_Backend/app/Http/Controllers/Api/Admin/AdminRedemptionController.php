@@ -6,25 +6,50 @@ use App\Http\Controllers\Controller;
 use App\Http\Resources\PropertyResource;
 use App\Models\Property;
 use App\Models\RedemptionTracking;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AdminRedemptionController extends Controller
 {
     public function dashboardData(Request $request): JsonResponse
     {
-        // Stats
-        $activeRedemptions = Property::where('workflow_stage', 'redemption')->count();
+        // Stats - broader query to match properties list
+        $activeRedemptions = Property::where(function ($query) {
+                $query->where('workflow_stage', 'redemption')
+                    ->orWhereHas('redemptionTracking', function ($q) {
+                        $q->whereIn('status', ['pending', 'redeemed']);
+                    })
+                    ->orWhereIn('status', ['active', 'purchased', 'owned']);
+            })->count();
+
         $totalRedeemedAmount = RedemptionTracking::where('status', 'redeemed')->sum('redemption_amount');
+        
+        // Calculate average turnaround time
+        $avgTurnaround = RedemptionTracking::whereNotNull('redeemed_at')
+            ->get()
+            ->avg(function ($tracking) {
+                return $tracking->created_at->diffInDays($tracking->redeemed_at);
+            });
+        $avgTurnaround = $avgTurnaround ? round($avgTurnaround) : 0;
+
         $approachingDeadline = RedemptionTracking::where('status', 'pending')
             ->where('redemption_deadline', '<=', now()->addDays(30))
             ->where('redemption_deadline', '>=', now())
             ->count();
-        $avgTurnaround = 45; // Mock
+            
+        // ... (rest of stats)
 
         // Queue / List
-        $queueRows = Property::where('workflow_stage', 'redemption')
-            ->with(['redemptionTracking'])
+        $queueRows = Property::where(function ($query) {
+                $query->where('workflow_stage', 'redemption')
+                    ->orWhereHas('redemptionTracking', function ($q) {
+                        $q->whereIn('status', ['pending', 'redeemed']);
+                    })
+                    ->orWhereIn('status', ['active', 'purchased', 'owned']);
+            })
+            ->with(['redemptionTracking', 'interestCalculations'])
             ->latest()
             ->limit(20)
             ->get()
@@ -49,10 +74,15 @@ class AdminRedemptionController extends Controller
                     }
                 }
 
-                // Calculate estimated payoff (mock logic + DB)
+                // Calculate estimated payoff
                 $amount = $tracking ? $tracking->redemption_amount : 0;
                 if ($amount == 0) {
-                     $amount = $prop->purchase_price ? ($prop->purchase_price * 1.2) : 0;
+                     if ($prop->interestCalculations->count() > 0) {
+                        $interest = $prop->interestCalculations->sum('calculated_amount');
+                        $amount = ($prop->purchase_price ?? 0) + $interest;
+                     } else {
+                        $amount = $prop->purchase_price ? ($prop->purchase_price * 1.2) : 0;
+                     }
                 }
 
                 return [
@@ -61,7 +91,7 @@ class AdminRedemptionController extends Controller
                     'parcelId' => $prop->parcel_id ?? 'Unknown',
                     'address' => $prop->address,
                     'county' => $prop->county,
-                    'owner' => 'PCIG', // Mock
+                    'owner' => $prop->owner ?? 'Unknown',
                     'deadline' => $deadline ? $deadline->format('M d, Y') : 'N/A',
                     'daysRemaining' => $deadline ? $deadline->diffForHumans() : 'N/A',
                     'status' => [
@@ -71,8 +101,8 @@ class AdminRedemptionController extends Controller
                     'estimatedPayoff' => '$' . number_format($amount, 2),
                     'payoffDateVal' => 'Valid until ' . now()->endOfMonth()->format('M d'),
                     'payoffStatus' => [
-                        'label' => 'Pending', // Mock
-                        'color' => 'warning'
+                        'label' => $tracking ? ucfirst($tracking->status) : 'Pending',
+                        'color' => ($tracking && $tracking->status === 'redeemed') ? 'success' : 'warning'
                     ],
                     'actions' => [
                         ['label' => 'Process Payoff', 'primary' => true],
@@ -94,10 +124,10 @@ class AdminRedemptionController extends Controller
                         'parcelId' => $tracking->property->parcel_id ?? 'Unknown',
                         'address' => $tracking->property->address ?? 'Unknown'
                     ],
-                    'owner' => 'Unknown',
+                    'owner' => $tracking->property->owner ?? 'Unknown',
                     'redemptionDate' => $tracking->redeemed_at ? $tracking->redeemed_at->format('M d, Y') : 'N/A',
                     'amount' => '$' . number_format($tracking->redemption_amount, 2),
-                    'method' => 'Wire', // Mock
+                    'method' => $tracking->payment_method ?? 'Wire',
                     'status' => 'Completed',
                     'processedBy' => 'System',
                     'action' => 'View'
@@ -191,8 +221,16 @@ class AdminRedemptionController extends Controller
 
     public function properties(Request $request): JsonResponse
     {
-        $query = Property::where('workflow_stage', 'redemption')
-            ->with(['primaryImage', 'redemptionTracking']);
+        // Allow all properties, or at least those in relevant stages + any with redemption tracking
+        $query = Property::where(function($q) {
+                // Base condition: Property is in redemption stage OR has active tracking
+                $q->where('workflow_stage', 'redemption')
+                  ->orWhereHas('redemptionTracking');
+            })
+            // Optionally, if user wants ALL properties visible here, we could remove the workflow check entirely
+            // But let's broaden it to include any property that is active/purchased
+            ->orWhereIn('status', ['active', 'purchased', 'owned'])
+            ->with(['primaryImage', 'redemptionTracking', 'interestCalculations']);
 
         // Search
         if ($request->has('search') && $request->search) {
@@ -260,10 +298,15 @@ class AdminRedemptionController extends Controller
                 }
             }
 
-            // Calculate estimated payoff (mock logic + DB)
+            // Calculate estimated payoff
             $amount = $tracking ? $tracking->redemption_amount : 0;
             if ($amount == 0) {
-                 $amount = $prop->purchase_price ? ($prop->purchase_price * 1.2) : 0;
+                 if ($prop->interestCalculations->count() > 0) {
+                    $interest = $prop->interestCalculations->sum('calculated_amount');
+                    $amount = ($prop->purchase_price ?? 0) + $interest;
+                 } else {
+                    $amount = $prop->purchase_price ? ($prop->purchase_price * 1.2) : 0;
+                 }
             }
 
             return [
@@ -272,7 +315,7 @@ class AdminRedemptionController extends Controller
                 'parcelId' => $prop->parcel_id ?? 'Unknown',
                 'address' => $prop->address,
                 'county' => $prop->county,
-                'owner' => 'Unknown',
+                'owner' => $prop->owner ?? 'Unknown',
                 'deadline' => $deadline ? $deadline->format('M d, Y') : 'N/A',
                 'daysRemaining' => $deadline ? (int)$daysRemaining . ' Days' : 'N/A',
                 'estimatedPayoff' => '$' . number_format($amount, 2),
@@ -282,8 +325,8 @@ class AdminRedemptionController extends Controller
                     'color' => $statusColor
                 ],
                 'payoffStatus' => [
-                    'label' => 'Pending',
-                    'color' => 'neutral'
+                    'label' => $tracking ? ucfirst($tracking->status) : 'Pending',
+                    'color' => ($tracking && $tracking->status === 'redeemed') ? 'success' : 'neutral'
                 ],
                 'actions' => [
                     ['label' => 'View Property', 'primary' => false],
@@ -313,8 +356,7 @@ class AdminRedemptionController extends Controller
             'notes' => 'nullable|string|max:1000',
         ]);
 
-        $property = Property::where('workflow_stage', 'redemption')
-            ->findOrFail($id);
+        $property = Property::findOrFail($id);
 
         $redemption = RedemptionTracking::firstOrCreate(
             ['property_id' => $property->id],
@@ -342,8 +384,7 @@ class AdminRedemptionController extends Controller
             'redeemed_at' => 'nullable|date',
         ]);
 
-        $property = Property::where('workflow_stage', 'redemption')
-            ->findOrFail($id);
+        $property = Property::findOrFail($id);
 
         $redemption = RedemptionTracking::where('property_id', $property->id)->firstOrFail();
 
@@ -364,5 +405,20 @@ class AdminRedemptionController extends Controller
             'message' => 'Redemption processed successfully',
             'data' => $redemption->load('property'),
         ]);
+    }
+
+    public function generatePayoffLetter($id)
+    {
+        try {
+            $property = Property::with(['redemptionTracking', 'interestCalculations'])->findOrFail($id);
+            $pdf = Pdf::loadView('pdf.payoff_letter', compact('property'));
+            
+            return response($pdf->output())
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'attachment; filename="payoff_letter_' . $property->id . '.pdf"');
+        } catch (\Exception $e) {
+            Log::error('Payoff Letter Error: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to generate PDF: ' . $e->getMessage()], 500);
+        }
     }
 }

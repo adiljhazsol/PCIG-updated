@@ -103,6 +103,7 @@ export default function CityCountyStateConfig() {
   // Data States
   const [locations, setLocations] = useState<any[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<number | null>(null);
+  const [statsCards, setStatsCards] = useState<any[]>(configData?.overviewCards || []);
 
   // Form States - Redemption
   const [statutoryInterestRate, setStatutoryInterestRate] = useState<string>(
@@ -172,12 +173,16 @@ export default function CityCountyStateConfig() {
     const fetchLocations = async () => {
       try {
         setLoading(true);
-        const response = await api.get('/admin/locations');
-        if (response.data.success) {
-          setLocations(response.data.data);
-          if (response.data.data.length > 0 && !selectedLocationId) {
+        const response = await api.get('/admin/locations/dashboard-data');
+        const data = response.data;
+        
+        if (data) {
+          if (data.locations) setLocations(data.locations);
+          if (data.overviewCards) setStatsCards(data.overviewCards);
+          
+          if (data.locations && data.locations.length > 0 && !selectedLocationId) {
              // Select the first one by default if none selected
-             setSelectedLocationId(response.data.data[0].id);
+             setSelectedLocationId(data.locations[0].id);
           }
         }
       } catch (err) {
@@ -458,6 +463,9 @@ export default function CityCountyStateConfig() {
         rules: updatedRules
       });
       
+      // Update local locations state
+      setLocations(locations.map(l => l.id === selectedLocationId ? { ...l, rules: updatedRules } : l));
+
       setSuccessMessage('Barment rules saved successfully');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
@@ -488,6 +496,9 @@ export default function CityCountyStateConfig() {
         rules: updatedRules
       });
       
+      // Update local locations state to prevent stale data on next save
+      setLocations(locations.map(l => l.id === selectedLocationId ? { ...l, rules: updatedRules } : l));
+
       setSuccessMessage('Quiet Title rules saved successfully');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (err) {
@@ -589,6 +600,10 @@ export default function CityCountyStateConfig() {
       await api.put(`/admin/locations/${selectedLocationId}`, {
         fees: cleanFees
       });
+      
+      // Update local locations state
+      setLocations(locations.map(l => l.id === selectedLocationId ? { ...l, fees: cleanFees } : l));
+
       setFees(updatedFees);
       setSuccessMessage('Fee deleted');
       setTimeout(() => setSuccessMessage(null), 3000);
@@ -652,6 +667,9 @@ export default function CityCountyStateConfig() {
           await api.put(`/admin/locations/${selectedLocationId}`, {
               rules: updatedRules
           });
+          
+          // Update local locations state
+          setLocations(locations.map(l => l.id === selectedLocationId ? { ...l, rules: updatedRules } : l));
           
           setTemplates(templates.map(t => t.id === id ? { ...cleanTemplate, isEditing: false } : t));
           
@@ -808,6 +826,9 @@ export default function CityCountyStateConfig() {
           // Update local state
           setAuctionSchedules(auctionSchedules.map(s => s.id === id ? { ...cleanSchedule, isEditing: false } : s));
           
+          // Update local locations state
+          setLocations(locations.map(l => l.id === selectedLocationId ? { ...l, rules: updatedRules } : l));
+
           setSuccessMessage('Auction schedule saved');
           setTimeout(() => setSuccessMessage(null), 3000);
       } catch (err) {
@@ -852,6 +873,9 @@ export default function CityCountyStateConfig() {
         await api.put(`/admin/locations/${selectedLocationId}`, {
             rules: updatedRules
         });
+        
+        // Update local locations state
+        setLocations(locations.map(l => l.id === selectedLocationId ? { ...l, rules: updatedRules } : l));
         
         setAuctionSchedules(updatedSchedules);
         setSuccessMessage('Auction schedule deleted');
@@ -951,6 +975,25 @@ export default function CityCountyStateConfig() {
   const CloneIcon = iconMap[countySelector.cloneButton.icon] || Copy;
   const AddFeeIcon = iconMap[localFees.addButton.icon] || Plus;
   const AddTemplateIcon = iconMap[statutoryTemplates.addButton.icon] || Plus;
+
+  const getSectionStatus = (section: string) => {
+      const location = locations.find(l => l.id === selectedLocationId);
+      if (!location) return { label: 'Unknown', bg: '#F1F5F9', color: '#64748B' };
+      
+      const rules = location.rules || {};
+      
+      if (section === 'redemption') {
+          if (rules.redemption) return { label: 'Configured', bg: '#DCFCE7', color: '#166534' };
+      } else if (section === 'barment') {
+          if (rules.barment) return { label: 'Configured', bg: '#DCFCE7', color: '#166534' };
+          return { label: 'Incomplete', bg: '#FEE2E2', color: '#991B1B' };
+      } else if (section === 'quiet_title') {
+          if (rules.quiet_title) return { label: 'Configured', bg: '#DCFCE7', color: '#166534' };
+          return { label: 'Configuration Needed', bg: '#FEF3C7', color: '#B45309' };
+      }
+      
+      return { label: 'Incomplete', bg: '#FEE2E2', color: '#991B1B' };
+  };
 
   return (
     <div style={pageWrapperStyle}>
@@ -1191,7 +1234,7 @@ export default function CityCountyStateConfig() {
                 minWidth: 0
               }}
             >
-              {overviewCards.map((card: any, idx: number) => {
+              {statsCards.map((card: any, idx: number) => {
                 const CardIcon = iconMap[card.icon] || Layers;
                 const SubIcon = card.subIcon ? iconMap[card.subIcon] : null;
                 return (
@@ -1526,13 +1569,13 @@ export default function CityCountyStateConfig() {
                     borderRadius: 999,
                     fontSize: isMobile ? 10 : 11,
                     fontWeight: 500,
-                    backgroundColor: redemptionRules.status.bg,
-                    color: redemptionRules.status.color,
+                    backgroundColor: getSectionStatus('redemption').bg,
+                    color: getSectionStatus('redemption').color,
                     whiteSpace: 'nowrap',
                     flexShrink: 0
                   }}
                 >
-                  {redemptionRules.status.label}
+                  {getSectionStatus('redemption').label}
                 </span>
               </div>
 
@@ -2130,8 +2173,20 @@ export default function CityCountyStateConfig() {
                   <h2 style={{ fontSize: isMobile ? 16 : isTablet ? 17 : 18, fontWeight: 600, color: '#0F172A', marginTop: 0, marginBottom: 4 }}>Quiet Title Rules</h2>
                   <p style={{ fontSize: isMobile ? 12 : 13, color: '#64748B', margin: 0 }}>Configure quiet title action parameters</p>
                 </div>
-                <span style={{ display: 'inline-block', padding: '4px 10px', borderRadius: 999, fontSize: 11, fontWeight: 500, backgroundColor: '#F1F5F9', color: '#64748B' }}>
-                  Configuration Needed
+                <span
+                  style={{
+                    display: 'inline-block',
+                    padding: '4px 10px',
+                    borderRadius: 999,
+                    fontSize: isMobile ? 10 : 11,
+                    fontWeight: 500,
+                    backgroundColor: getSectionStatus('quiet_title').bg,
+                    color: getSectionStatus('quiet_title').color,
+                    whiteSpace: 'nowrap',
+                    flexShrink: 0
+                  }}
+                >
+                  {getSectionStatus('quiet_title').label}
                 </span>
               </div>
               <div style={{ display: 'grid', gap: 16 }}>

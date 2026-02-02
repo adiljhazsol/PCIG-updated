@@ -5,6 +5,9 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\Account;
 use App\Models\LedgerEntry;
+use App\Models\Property;
+use App\Models\Fund;
+use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
@@ -16,21 +19,32 @@ class AdminLedgerController extends Controller
      */
     public function dashboardData(Request $request): JsonResponse
     {
-        // 1. Stats
-        $totalAssets = Account::where('type', 'asset')->sum('balance');
-        $totalLiabilities = Account::where('type', 'liability')->sum('balance');
-        $equity = Account::where('type', 'equity')->sum('balance');
-        
-        $revenue = Account::where('type', 'revenue')->sum('balance');
-        $expenses = Account::where('type', 'expense')->sum('balance');
-        $netIncome = $revenue - $expenses;
+        if ($request->boolean('recalculate')) {
+            $this->recalculateBalancesInternal();
+        }
 
-        // Mocking previous month data for trends (calculating real historical balances is complex without snapshots)
-        // For now, we'll keep the trend percentages as placeholders or 0 if no data
+        $totalAssets = \App\Models\Property::sum('current_value') + \App\Models\Fund::sum('total_assets');
+        $totalLiabilities = \App\Models\Expense::sum('amount'); // Simplified liability proxy
+        $netEquity = $totalAssets - $totalLiabilities;
+        
+        // Calculate Net Income (YTD)
+        $incomeYTD = \App\Models\Payment::where('type', 'incoming')
+            ->where('status', 'completed')
+            ->whereYear('processed_at', now()->year)
+            ->sum('amount');
+            
+        $expensesYTD = \App\Models\Expense::whereYear('date', now()->year)->sum('amount');
+        $netIncome = $incomeYTD - $expensesYTD;
+        
+        // Calculate trends (vs last month)
+        $lastMonthAssets = \App\Models\Property::where('created_at', '<', now()->subMonth())->sum('current_value'); 
+        $assetTrend = $lastMonthAssets > 0 ? (($totalAssets - $lastMonthAssets) / $lastMonthAssets) * 100 : 0;
+        $assetTrendStr = ($assetTrend >= 0 ? '+' : '') . number_format($assetTrend, 1) . '% vs last mo';
+
         $stats = [
-            ['label' => 'Total Assets', 'value' => '$' . number_format($totalAssets / 1000000, 2) . 'M', 'change' => '+0.0% vs last mo', 'icon' => 'Scale', 'color' => '#10B981'],
+            ['label' => 'Total Assets', 'value' => '$' . number_format($totalAssets / 1000000, 2) . 'M', 'change' => $assetTrendStr, 'icon' => 'Scale', 'color' => '#10B981'],
             ['label' => 'Total Liabilities', 'value' => '$' . number_format($totalLiabilities / 1000000, 2) . 'M', 'change' => '+0.0% vs last mo', 'icon' => 'TrendingDown', 'color' => '#F59E0B'],
-            ['label' => 'Equity', 'value' => '$' . number_format($equity / 1000000, 2) . 'M', 'change' => '+0.0% vs last mo', 'icon' => 'TrendingUp', 'color' => '#3B82F6'],
+            ['label' => 'Equity', 'value' => '$' . number_format($netEquity / 1000000, 2) . 'M', 'change' => '+0.0% vs last mo', 'icon' => 'TrendingUp', 'color' => '#3B82F6'],
             ['label' => 'Net Income (YTD)', 'value' => '$' . number_format($netIncome / 1000, 0) . 'k', 'change' => '+0.0% vs last year', 'icon' => 'FileText', 'color' => '#6366F1']
         ];
 
@@ -52,7 +66,7 @@ class AdminLedgerController extends Controller
                     'typeColor' => '#2563EB',
                     'typeBg' => '#EFF6FF',
                     'description' => $entry->description,
-                    'subDescription' => $entry->reference_id ? 'Ref: ' . $entry->reference_id : 'Manual Entry',
+                    'subDescription' => $entry->transaction_id ? 'Ref: #' . $entry->transaction_id : 'Manual Entry',
                     'propertyFund' => 'N/A', // Placeholder unless linked
                     'propertyAddress' => null,
                     'debit' => $debit,
@@ -75,10 +89,69 @@ class AdminLedgerController extends Controller
                 ];
             });
 
+        // 3. Account Balances
+        $accounts = Account::orderBy('code')->get()->map(function ($acc) {
+            return [
+                'id' => $acc->id,
+                'code' => $acc->code,
+                'name' => $acc->name,
+                'type' => ucfirst($acc->type),
+                'balance' => '$' . number_format($acc->balance, 2)
+            ];
+        });
+
+        // 4. Property P&L
+        $propertyPL = Property::select('id', 'address')->get()->map(function ($p) {
+            // Expenses from Expense model
+            $expenses = \App\Models\Expense::where('property_id', $p->id)->sum('amount');
+            
+            // Income from Transactions (assuming type 'rent' or 'income')
+            $income = Transaction::where('property_id', $p->id)
+                ->whereIn('type', ['rent', 'income', 'revenue', 'sale'])
+                ->sum('amount');
+
+            return [
+                'id' => $p->id,
+                'name' => $p->address,
+                'income' => '$' . number_format($income, 2),
+                'expenses' => '$' . number_format($expenses, 2),
+                'netIncome' => '$' . number_format($income - $expenses, 2),
+                'rawNet' => $income - $expenses // for sorting/styling
+            ];
+        });
+
+        // 5. Fund P&L
+        $fundPL = Fund::select('id', 'name')->get()->map(function ($f) {
+            // Expenses linked to Fund (if Expense has fund_id, else 0)
+            // Assuming Expense model has fund_id based on typical structure, if not we check
+            // For now, let's assume it might not, so we use Transaction for both if possible.
+            // Or just use Transaction for everything related to Fund.
+            
+            $income = Transaction::where('fund_id', $f->id)
+                ->whereIn('type', ['subscription', 'income', 'revenue'])
+                ->sum('amount');
+                
+            $expenses = Transaction::where('fund_id', $f->id)
+                ->whereIn('type', ['expense', 'fee', 'management_fee'])
+                ->sum('amount');
+
+            return [
+                'id' => $f->id,
+                'name' => $f->name,
+                'income' => '$' . number_format($income, 2),
+                'expenses' => '$' . number_format($expenses, 2),
+                'netIncome' => '$' . number_format($income - $expenses, 2),
+                'rawNet' => $income - $expenses
+            ];
+        });
+
         return response()->json([
             'lightweightLedger' => [
                 'stats' => $stats,
-                'journalEntries' => $entries
+                'journalEntries' => $entries,
+                'accounts' => $accounts,
+                'propertyPL' => $propertyPL,
+                'fundPL' => $fundPL
             ]
         ]);
     }
@@ -126,6 +199,99 @@ class AdminLedgerController extends Controller
     }
 
     /**
+     * Recalculate all account balances from ledger entries
+     */
+    public function recalculate(): JsonResponse
+    {
+        try {
+            $this->recalculateBalancesInternal();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Account balances recalculated successfully.'
+            ]);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to recalculate balances: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
+    private function recalculateBalancesInternal()
+    {
+        DB::beginTransaction();
+
+        try {
+            // Reset all balances to 0
+            Account::query()->update(['balance' => 0]);
+
+            $accounts = Account::all();
+
+            foreach ($accounts as $account) {
+                $debits = LedgerEntry::where('account_id', $account->id)->sum('debit');
+                $credits = LedgerEntry::where('account_id', $account->id)->sum('credit');
+
+                if (in_array($account->type, ['asset', 'expense'])) {
+                    $account->balance = $debits - $credits;
+                } else {
+                    $account->balance = $credits - $debits;
+                }
+                $account->save();
+            }
+
+            DB::commit();
+        } catch (\Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    /**
+     * Export ledger entries to CSV
+     */
+    public function export()
+    {
+        $filename = 'ledger_export_' . date('Y-m-d_His') . '.csv';
+
+        $headers = [
+            "Content-type" => "text/csv",
+            "Content-Disposition" => "attachment; filename=$filename",
+            "Pragma" => "no-cache",
+            "Cache-Control" => "must-revalidate, post-check=0, pre-check=0",
+            "Expires" => "0"
+        ];
+
+        $columns = ['Date', 'Entry #', 'Description', 'Account', 'Debit', 'Credit', 'Transaction ID'];
+
+        $callback = function() use ($columns) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, $columns);
+
+            LedgerEntry::with('account')
+                ->orderBy('entry_date', 'desc')
+                ->chunk(100, function($entries) use ($file) {
+                    foreach ($entries as $entry) {
+                        fputcsv($file, [
+                            $entry->entry_date->format('Y-m-d'),
+                            'JE-' . str_pad($entry->id, 5, '0', STR_PAD_LEFT),
+                            $entry->description,
+                            $entry->account ? $entry->account->name : 'Unknown',
+                            $entry->debit,
+                            $entry->credit,
+                            $entry->transaction_id ?? 'Manual'
+                        ]);
+                    }
+                });
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    /**
      * Create a manual journal entry (Double Entry)
      */
     public function store(Request $request): JsonResponse
@@ -133,7 +299,7 @@ class AdminLedgerController extends Controller
         $request->validate([
             'entry_date' => 'required|date',
             'description' => 'required|string',
-            'entries' => 'required|array|min:2',
+            'entries' => 'required|array|min:1',
             'entries.*.account_id' => 'required|exists:accounts,id',
             'entries.*.debit' => 'required|numeric|min:0',
             'entries.*.credit' => 'required|numeric|min:0',

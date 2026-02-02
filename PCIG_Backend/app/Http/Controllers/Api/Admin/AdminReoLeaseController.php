@@ -15,10 +15,17 @@ class AdminReoLeaseController extends Controller
     public function dashboardData(): JsonResponse
     {
         $leasedPropertiesCount = Property::where('workflow_stage', 'reo_leased')->count();
+        $totalReoProperties = Property::where('status', 'reo')->count();
         $monthlyRevenue = ReoLease::where('status', 'active')->sum('monthly_rent');
-        // Mocking occupancy rate and lease term for now as we might need more complex logic
-        $occupancyRate = $leasedPropertiesCount > 0 ? '92%' : '0%';
-        $avgLeaseTerm = '12 mos';
+        
+        // Calculate Occupancy Rate
+        $occupancyRate = $totalReoProperties > 0 ? round(($leasedPropertiesCount / $totalReoProperties) * 100) . '%' : '0%';
+        
+        // Calculate Avg Lease Term
+        $avgLeaseDays = ReoLease::where('status', 'active')
+            ->selectRaw('AVG(DATEDIFF(lease_end, lease_start)) as avg_days')
+            ->value('avg_days');
+        $avgLeaseTerm = $avgLeaseDays ? round($avgLeaseDays / 30) . ' mos' : '0 mos';
 
         $expiringLeasesCount = ReoLease::where('status', 'active')
             ->where('lease_end', '<=', now()->addDays(30))
@@ -33,8 +40,19 @@ class AdminReoLeaseController extends Controller
 
         $leasesData = $recentLeases->map(function ($p) {
             $lease = $p->reoLease;
-            $paymentStatus = 'Paid'; // Logic to determine status
-            $paymentStatusColor = '#10B981';
+            // Determine payment status based on current month's payment
+            $currentMonthPayment = $lease ? $lease->payments()
+                ->whereMonth('due_date', now()->month)
+                ->whereYear('due_date', now()->year)
+                ->first() : null;
+                
+            $paymentStatus = $currentMonthPayment && $currentMonthPayment->status === 'paid' ? 'Paid' : 'Pending';
+            $paymentStatusColor = $paymentStatus === 'Paid' ? '#10B981' : '#F59E0B';
+            
+            // Calculate Yield (Annual Rent / Purchase Price)
+            $annualRent = $lease ? $lease->monthly_rent * 12 : 0;
+            $purchasePrice = $p->purchase_price > 0 ? $p->purchase_price : 1; // Avoid div by zero
+            $yield = round(($annualRent / $purchasePrice) * 100, 1) . '%';
             
             return [
                 'id' => (string)$p->id,
@@ -53,7 +71,7 @@ class AdminReoLeaseController extends Controller
                 'opex' => '$0', 
                 'noi' => '$' . number_format(($lease ? $lease->monthly_rent : 0), 0),
                 'noiColor' => '#10B981',
-                'yield' => 'N/A', // ROI calculation requires more data
+                'yield' => $yield,
                 'leaseEnd' => $lease ? $lease->lease_end->format('M Y') : '--',
                 'leaseEndDetail' => $lease ? $lease->lease_end->diffForHumans() : '',
                 'tabs' => ['details', 'payment', 'documents'],
@@ -84,10 +102,10 @@ class AdminReoLeaseController extends Controller
                     ];
                 }) : [],
                 'performanceYTD' => [
-                    'grossIncome' => '$28,800',
-                    'expenses' => '$4,200',
-                    'netOperatingIncome' => '$24,600',
-                    'cashYield' => '8.2%',
+                    'grossIncome' => '$' . number_format($lease ? $lease->payments()->whereYear('paid_date', now()->year)->sum('amount') : 0, 0),
+                    'expenses' => '$' . number_format(\App\Models\Expense::where('property_id', $p->id)->whereYear('date', now()->year)->sum('amount'), 0),
+                    'netOperatingIncome' => '$' . number_format(($lease ? $lease->payments()->whereYear('paid_date', now()->year)->sum('amount') : 0) - \App\Models\Expense::where('property_id', $p->id)->whereYear('date', now()->year)->sum('amount'), 0),
+                    'cashYield' => $purchasePrice > 0 ? round(((($lease ? $lease->payments()->whereYear('paid_date', now()->year)->sum('amount') : 0) - \App\Models\Expense::where('property_id', $p->id)->whereYear('date', now()->year)->sum('amount')) / $purchasePrice) * 100, 1) . '%' : '0%',
                     'cashYieldColor' => '#10B981'
                 ]
             ];
@@ -165,6 +183,16 @@ class AdminReoLeaseController extends Controller
         ];
 
         return response()->json($data);
+    }
+
+    public function availableProperties(): JsonResponse
+    {
+        $properties = Property::where('workflow_stage', 'reo_disposition')
+            ->select('id', 'address', 'city', 'state', 'zip_code')
+            ->orderBy('address')
+            ->get();
+            
+        return response()->json($properties);
     }
 
     public function leasedProperties(Request $request): JsonResponse

@@ -84,7 +84,8 @@ class AdminNoticeController extends Controller
         // Notices Query
         $query = Notice::with(['property', 'template'])
             ->select('notices.*') // Select notices columns to avoid collision
-            ->leftJoin('properties', 'notices.property_id', '=', 'properties.id');
+            ->leftJoin('properties', 'notices.property_id', '=', 'properties.id')
+            ->leftJoin('notice_templates', 'notices.template_id', '=', 'notice_templates.id');
 
         // Apply Search
         if ($search) {
@@ -98,11 +99,11 @@ class AdminNoticeController extends Controller
 
         // Apply Status Filter
         if ($statusFilter !== 'All Status') {
-            $query->where('status', strtolower($statusFilter));
+            $query->where('notices.status', strtolower($statusFilter));
         }
 
         // Apply Date Filter
-        $query->where('created_at', '>=', $startDate);
+        $query->where('notices.created_at', '>=', $startDate);
 
         // Apply Sort
         // Map frontend sort columns to DB columns
@@ -299,13 +300,14 @@ class AdminNoticeController extends Controller
             $template->content
         );
         $filePath = 'notices/' . uniqid() . '.pdf'; 
+        // In real app, save content to storage
 
         $notice = Notice::create([
             'property_id' => $request->property_id,
             'template_id' => $request->template_id,
             'recipient_name' => $request->recipient_name,
             'recipient_address' => $request->recipient_address,
-            'status' => 'generated',
+            'status' => 'draft', // Default to draft on create
             'file_path' => $filePath,
             'created_by' => $request->user()->id,
         ]);
@@ -313,7 +315,71 @@ class AdminNoticeController extends Controller
         return response()->json([
             'success' => true,
             'data' => $notice,
-            'message' => 'Notice generated successfully'
+            'message' => 'Notice created successfully'
         ], 201);
+    }
+
+    public function show($id): JsonResponse
+    {
+        $notice = Notice::findOrFail($id);
+        return response()->json([
+            'success' => true,
+            'data' => $notice
+        ]);
+    }
+
+    public function update(Request $request, $id): JsonResponse
+    {
+        $notice = Notice::findOrFail($id);
+        
+        $request->validate([
+            'property_id' => 'sometimes|exists:properties,id',
+            'template_id' => 'sometimes|exists:notice_templates,id',
+            'recipient_name' => 'sometimes|string',
+            'recipient_address' => 'sometimes|string',
+            'status' => 'sometimes|string',
+        ]);
+
+        $notice->update($request->all());
+
+        return response()->json([
+            'success' => true,
+            'data' => $notice,
+            'message' => 'Notice updated successfully'
+        ]);
+    }
+
+    public function send(Request $request, $id): JsonResponse
+    {
+        $notice = Notice::findOrFail($id);
+        $notice->update([
+            'status' => 'sent',
+            'sent_date' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Notice marked as sent successfully'
+        ]);
+    }
+
+    public function preview($id): JsonResponse
+    {
+        $notice = Notice::findOrFail($id);
+        // In a real app, generate a temporary signed URL or return the file content
+        // For this mock, we'll return a dummy PDF URL or just success
+        return response()->json([
+            'url' => asset('storage/' . $notice->file_path),
+            'content' => 'Preview content would appear here.'
+        ]);
+    }
+
+    public function templates(): JsonResponse
+    {
+        $templates = NoticeTemplate::select('id', 'name')->get();
+        return response()->json([
+            'success' => true,
+            'data' => $templates
+        ]);
     }
 }

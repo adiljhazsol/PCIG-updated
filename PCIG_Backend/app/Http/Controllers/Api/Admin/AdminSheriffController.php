@@ -242,7 +242,9 @@ class AdminSheriffController extends Controller
                     $prop->owner ?? 'Unknown',
                     $prop->sheriff_file_number ?? '',
                     $prop->tax_year ?? date('Y'),
-                    $prop->purchase_price ?? 0, // Fallback for total_due
+                    ($prop->sheriffSale && $prop->sheriffSale->winning_bid > 0)
+                        ? $prop->sheriffSale->winning_bid
+                        : ($prop->purchase_price ?? 0),
                     $prop->sheriffSale ? $prop->sheriffSale->status : 'Pending'
                 ]);
             }
@@ -313,7 +315,12 @@ class AdminSheriffController extends Controller
             'owner' => $prop->owner ?? 'Unknown',
             'sheriffFile' => $prop->sheriff_file_number ?? 'Pending',
             'taxYear' => $prop->tax_year ?? date('Y'),
-            'amount' => '$' . number_format($prop->purchase_price ?? 0, 2), // Using purchase_price as proxy
+            'amount' => '$' . number_format(
+                ($prop->sheriffSale && $prop->sheriffSale->winning_bid > 0)
+                ? $prop->sheriffSale->winning_bid
+                : ($prop->purchase_price ?? 0),
+                2
+            ),
             'exportStatus' => $exportStatus,
             'deliveryStatus' => $deliveryStatus,
             'actionOverride' => null

@@ -45,6 +45,7 @@ class User extends Authenticatable
     protected $casts = [
         'email_verified_at' => 'datetime',
         'password' => 'hashed',
+        'hourly_rate' => 'decimal:2',
         'last_login_at' => 'datetime',
     ];
 
@@ -91,5 +92,10 @@ class User extends Authenticatable
     public function timeEntries()
     {
         return $this->hasMany(TimeEntry::class);
+    }
+
+    public function bankAccounts()
+    {
+        return $this->hasMany(BankAccount::class);
     }
 }

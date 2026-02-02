@@ -11,9 +11,11 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::table('funds', function (Blueprint $table) {
-            $table->softDeletes();
-        });
+        if (!Schema::hasColumn('funds', 'deleted_at')) {
+            Schema::table('funds', function (Blueprint $table) {
+                $table->softDeletes();
+            });
+        }
     }
 
     /**

@@ -14,7 +14,7 @@ class AdminAuctionController extends Controller
     public function dashboardData(Request $request): JsonResponse
     {
         // Stats
-        $totalAuctions = Property::where('workflow_stage', 'auction')->count();
+        $totalAuctions = Auction::count();
         $upcomingAuctions = Auction::where('status', 'scheduled')
             ->where('auction_date', '>', now())
             ->count();
@@ -24,34 +24,92 @@ class AdminAuctionController extends Controller
             ->count();
 
         // Tabs counts
-        $scheduledCount = Auction::where('status', 'scheduled')->count();
+        $scheduledCount = Auction::where('status', 'scheduled')
+            ->where('auction_date', '>', now())
+            ->count();
+        $pendingResultsCount = Auction::where('status', 'scheduled')
+            ->where('auction_date', '<=', now())
+            ->count();
         $completedCount = Auction::where('status', 'completed')->count();
-        $allCount = Property::where('workflow_stage', 'auction')->count();
+        $allCount = Auction::count();
 
-        // Queue (Properties)
-        $properties = Property::where('workflow_stage', 'auction')
-            ->with(['auction'])
-            ->latest()
-            ->limit(20)
+        // Queue Query
+        $query = Auction::with('property');
+
+        // 1. Tab Filter
+        $tab = $request->get('tab', 'auction-ready');
+        if ($tab === 'auction-ready') {
+            $query->where('status', 'scheduled')
+                  ->where('auction_date', '>', now());
+        } elseif ($tab === 'pending-results') {
+            $query->where('status', 'scheduled')
+                  ->where('auction_date', '<=', now());
+        } elseif ($tab === 'completed') {
+            $query->where('status', 'completed');
+        } 
+        // 'all' -> no specific status filter
+
+        // 2. Search Filter
+        if ($search = $request->get('search')) {
+            $query->whereHas('property', function($q) use ($search) {
+                $q->where('address', 'like', "%{$search}%")
+                  ->orWhere('city', 'like', "%{$search}%")
+                  ->orWhere('zip_code', 'like', "%{$search}%")
+                  ->orWhere('parcel_id', 'like', "%{$search}%");
+            });
+        }
+
+        // 3. Status Filter (Dropdown)
+        if ($status = $request->get('status')) {
+            if ($status !== 'All Statuses' && $status !== 'Status') {
+                 $query->where('status', strtolower($status));
+            }
+        }
+
+        // 4. County Filter
+        if ($county = $request->get('county')) {
+             if ($county !== 'All Counties' && $county !== 'County') {
+                $query->whereHas('property', function($q) use ($county) {
+                    $q->where('county', $county);
+                });
+             }
+        }
+
+        // 5. Date Range Filter
+        if ($range = $request->get('date_range')) {
+            if ($range === 'Next 7 Days') {
+                $query->whereBetween('auction_date', [now(), now()->addDays(7)]);
+            } elseif ($range === 'This Month') {
+                $query->whereMonth('auction_date', now()->month)
+                      ->whereYear('auction_date', now()->year);
+            } elseif ($range === 'Next Month') {
+                $query->whereMonth('auction_date', now()->addMonth()->month)
+                      ->whereYear('auction_date', now()->addMonth()->year);
+            }
+        }
+
+        $rows = $query->latest('auction_date')
+            ->limit(50)
             ->get()
-            ->map(function ($prop) {
-                $auction = $prop->auction;
+            ->map(function ($auction) {
+                $prop = $auction->property;
                 return [
                     'id' => $prop->id,
+                    'auction_id' => $auction->id,
                     'pcigId' => 'PCIG-'.$prop->id,
                     'address' => $prop->address,
                     'city' => $prop->city,
                     'state' => $prop->state,
                     'zip' => $prop->zip,
-                    'auctionDate' => $auction ? $auction->auction_date : 'Not Scheduled',
-                    'auctionTime' => '10:00 AM', // Mock
-                    'startBid' => '$' . number_format($auction ? $auction->starting_bid : 0),
-                    'soldAmount' => $auction && $auction->winning_bid ? '$' . number_format($auction->winning_bid) : null,
-                    'surplus' => $auction && $auction->winning_bid ? '+$' . number_format($auction->winning_bid - ($auction->starting_bid ?? 0)) : null,
-                    'maxBid' => '$' . number_format(($auction ? $auction->starting_bid : 0) * 1.5), // Mock
-                    'status' => $auction ? ucfirst($auction->status) : 'New',
-                    'statusColor' => $this->getStatusColor($auction ? $auction->status : 'new'),
-                    'location' => $prop->county . ' County Steps',
+                    'auctionDate' => $auction->auction_date ? $auction->auction_date->format('Y-m-d') : 'Not Scheduled',
+                    'auctionTime' => $auction->auction_date ? $auction->auction_date->format('h:i A') : 'TBD',
+                    'startBid' => '$' . number_format($auction->starting_bid ?? 0),
+                    'soldAmount' => $auction->winning_bid ? '$' . number_format($auction->winning_bid) : null,
+                    'surplus' => $auction->winning_bid ? '+$' . number_format($auction->winning_bid - ($auction->starting_bid ?? 0)) : null,
+                    'maxBid' => null, 
+                    'status' => ucfirst($auction->status),
+                    'statusColor' => $this->getStatusColor($auction->status),
+                    'location' => ($prop->county ?? 'Unknown') . ' County Steps',
                     'prepStatus' => 'Ready', 
                     'prepStatusColor' => 'green',
                 ];
@@ -76,20 +134,20 @@ class AdminAuctionController extends Controller
                 ],
                 'tabs' => [
                     ['key' => 'auction-ready', 'label' => 'Auction Ready', 'count' => $scheduledCount],
-                    ['key' => 'pending-results', 'label' => 'Pending Results', 'count' => $pendingResults],
+                    ['key' => 'pending-results', 'label' => 'Pending Results', 'count' => $pendingResultsCount],
                     ['key' => 'completed', 'label' => 'Completed', 'count' => $completedCount],
                     ['key' => 'all', 'label' => 'All Properties', 'count' => $allCount]
                 ],
                 'filters' => [
-                    ['label' => 'Status', 'options' => ['Scheduled', 'Completed', 'Cancelled']],
-                    ['label' => 'County', 'options' => ['All Counties', 'Fulton', 'Dekalb', 'Gwinnett']],
-                    ['label' => 'Date Range', 'options' => ['Next 7 Days', 'This Month', 'Next Month']]
+                    ['label' => 'Status', 'options' => ['All Statuses', 'Scheduled', 'Completed', 'Cancelled']],
+                    ['label' => 'County', 'options' => ['All Counties', 'Fulton', 'Dekalb', 'Gwinnett', 'Cobb']],
+                    ['label' => 'Date Range', 'options' => ['Any Date', 'Next 7 Days', 'This Month', 'Next Month']]
                 ],
                 'queue' => [
                     'title' => 'Auction Queue',
                     'subtitle' => 'Properties scheduled for auction',
                     'tableHeaders' => ['', 'Property', 'Date/Time', 'Status', 'Bidding', 'Location', 'Prep', 'Actions'],
-                    'rows' => $properties
+                    'rows' => $rows
                 ]
             ]
         ]);
@@ -131,6 +189,15 @@ class AdminAuctionController extends Controller
                 'total' => $properties->total(),
             ],
         ]);
+    }
+
+    public function availableProperties(): JsonResponse
+    {
+        $properties = Property::select('id', 'address', 'city', 'state', 'zip_code', 'county')
+            ->orderBy('address')
+            ->get();
+            
+        return response()->json($properties);
     }
 
     public function schedule(Request $request): JsonResponse
@@ -223,6 +290,185 @@ class AdminAuctionController extends Controller
             'success' => true,
             'message' => 'Auction completed successfully',
             'data' => $auction->load('property'),
+        ]);
+    }
+
+    public function export(Request $request)
+    {
+        $fileName = 'auction_calendar_' . date('Y-m-d') . '.csv';
+
+        $headers = [
+            "Content-type"        => "text/csv",
+            "Content-Disposition" => "attachment; filename=$fileName",
+            "Pragma"              => "no-cache",
+            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+            "Expires"             => "0"
+        ];
+
+        $columns = [
+            'Property Address', 'City', 'State', 'Zip', 'County',
+            'Auction Date', 'Starting Bid', 'Winning Bid', 'Status', 'Notes'
+        ];
+
+        $callback = function() use ($columns, $request) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, $columns);
+
+            $query = Auction::with('property');
+
+            // 1. Tab Filter
+            $tab = $request->get('tab', 'auction-ready');
+            if ($tab === 'auction-ready') {
+                $query->where('status', 'scheduled')
+                      ->where('auction_date', '>', now());
+            } elseif ($tab === 'pending-results') {
+                $query->where('status', 'scheduled')
+                      ->where('auction_date', '<=', now());
+            } elseif ($tab === 'completed') {
+                $query->where('status', 'completed');
+            } 
+
+            // 2. Search Filter
+            if ($search = $request->get('search')) {
+                $query->whereHas('property', function($q) use ($search) {
+                    $q->where('address', 'like', "%{$search}%")
+                      ->orWhere('city', 'like', "%{$search}%")
+                      ->orWhere('zip_code', 'like', "%{$search}%")
+                      ->orWhere('parcel_id', 'like', "%{$search}%");
+                });
+            }
+
+            // 3. Status Filter (Dropdown)
+            if ($status = $request->get('status')) {
+                if ($status !== 'All Statuses' && $status !== 'Status') {
+                     $query->where('status', strtolower($status));
+                }
+            }
+
+            // 4. County Filter
+            if ($county = $request->get('county')) {
+                 if ($county !== 'All Counties' && $county !== 'County') {
+                    $query->whereHas('property', function($q) use ($county) {
+                        $q->where('county', $county);
+                    });
+                 }
+            }
+
+            // 5. Date Range Filter
+            if ($range = $request->get('date_range')) {
+                if ($range === 'Next 7 Days') {
+                    $query->whereBetween('auction_date', [now(), now()->addDays(7)]);
+                } elseif ($range === 'This Month') {
+                    $query->whereMonth('auction_date', now()->month)
+                          ->whereYear('auction_date', now()->year);
+                } elseif ($range === 'Next Month') {
+                    $query->whereMonth('auction_date', now()->addMonth()->month)
+                          ->whereYear('auction_date', now()->addMonth()->year);
+                }
+            }
+
+            $query->chunk(100, function($auctions) use ($file) {
+                foreach ($auctions as $auction) {
+                    $row = [
+                        $auction->property->address ?? '',
+                        $auction->property->city ?? '',
+                        $auction->property->state ?? '',
+                        $auction->property->zip_code ?? '',
+                        $auction->property->county ?? '',
+                        $auction->auction_date ? $auction->auction_date->format('Y-m-d H:i:s') : '',
+                        $auction->starting_bid,
+                        $auction->winning_bid,
+                        $auction->status,
+                        $auction->notes
+                    ];
+                    fputcsv($file, $row);
+                }
+            });
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    public function import(Request $request): JsonResponse
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt',
+        ]);
+
+        $file = $request->file('file');
+        $path = $file->getRealPath();
+        $data = array_map('str_getcsv', file($path));
+        
+        // Remove header row
+        $header = array_shift($data);
+        
+        $importedCount = 0;
+        $errors = [];
+
+        foreach ($data as $index => $row) {
+            // Basic validation of row length
+            if (count($row) < 1) continue;
+
+            // Assuming format: Property Address, City, State, Zip, County, Auction Date, Starting Bid, Winning Bid, Status, Notes
+            $address = $row[0] ?? null;
+            if (!$address) continue;
+
+            // Find property
+            $property = Property::where('address', 'like', $address . '%')->first();
+            
+            if (!$property) {
+                $errors[] = "Row " . ($index + 2) . ": Property not found for address '$address'";
+                continue;
+            }
+
+            $auctionDateStr = $row[5] ?? null;
+            $startingBid = $row[6] ?? 0;
+            $winningBid = $row[7] ?? null;
+            $statusStr = strtolower($row[8] ?? 'scheduled');
+            $notes = $row[9] ?? null;
+
+            $auctionDate = null;
+            if ($auctionDateStr) {
+                try {
+                    $auctionDate = \Carbon\Carbon::parse($auctionDateStr);
+                } catch (\Exception $e) {
+                    // invalid date
+                }
+            }
+
+            // Find existing auction or create new
+            // Logic: if there is an active auction (scheduled) or we are importing results for a recently past auction
+            $auction = Auction::where('property_id', $property->id)
+                ->latest()
+                ->first();
+            
+            if ($auction) {
+                $auction->update([
+                    'auction_date' => $auctionDate ? $auctionDate : $auction->auction_date,
+                    'starting_bid' => is_numeric($startingBid) ? $startingBid : $auction->starting_bid,
+                    'winning_bid' => is_numeric($winningBid) ? $winningBid : $auction->winning_bid,
+                    'status' => $statusStr ?: $auction->status,
+                    'notes' => $notes ?: $auction->notes,
+                ]);
+            } else {
+                Auction::create([
+                    'property_id' => $property->id,
+                    'auction_date' => $auctionDate ? $auctionDate : now(),
+                    'starting_bid' => is_numeric($startingBid) ? $startingBid : 0,
+                    'winning_bid' => is_numeric($winningBid) ? $winningBid : null,
+                    'status' => $statusStr ?: 'scheduled',
+                    'notes' => $notes,
+                ]);
+            }
+            $importedCount++;
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => "Processed $importedCount auctions.",
+            'errors' => $errors
         ]);
     }
 }

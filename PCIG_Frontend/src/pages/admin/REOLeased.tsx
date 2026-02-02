@@ -9,10 +9,12 @@ import {
   DollarSign,
   TrendingUp,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  X
 } from 'lucide-react';
 import AdminNav from '../../components/admin/AdminNav';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
+import api from '../../services/api';
 
 // Icon mapping from JSON string names to actual icon components
 const iconMap: { [key: string]: any } = {
@@ -141,35 +143,70 @@ export default function REOLeased() {
   const [selectedLeaseId, setSelectedLeaseId] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>('details');
 
+  const [showAddLeaseModal, setShowAddLeaseModal] = useState(false);
+  const [availableProperties, setAvailableProperties] = useState<any[]>([]);
+  const [newLease, setNewLease] = useState({
+      property_id: '',
+      tenant_name: '',
+      monthly_rent: '',
+      security_deposit: '',
+      lease_start: '',
+      lease_end: '',
+      notes: ''
+  });
+
+  const fetchData = async () => {
+      try {
+          const response = await api.get('/admin/reo/lease/dashboard-data');
+          const result = response.data;
+          setData(result);
+          
+          if (result.leases && result.leases.length > 0) {
+              // Only set selected lease if none selected or current selection not in new list
+              if (!selectedLeaseId || !result.leases.find((l: Lease) => l.id === selectedLeaseId)) {
+                   setSelectedLeaseId(result.leases[0].id);
+              }
+          }
+      } catch (err) {
+          console.error('Error fetching dashboard data:', err);
+          setError('Failed to load dashboard data');
+      } finally {
+          setLoading(false);
+      }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-        try {
-            const token = localStorage.getItem('token');
-            const response = await fetch('http://localhost:8000/api/admin/reo/lease/dashboard-data', {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Accept': 'application/json'
-                }
-            });
-
-            if (!response.ok) throw new Error('Failed to fetch dashboard data');
-            const result = await response.json();
-            setData(result);
-            
-            if (result.leases && result.leases.length > 0) {
-                setSelectedLeaseId(result.leases[0].id);
-                // setActiveTab(result.selectedProperty.activeTab); // Use default state or lease property if available
-            }
-        } catch (err) {
-            console.error('Error fetching dashboard data:', err);
-            setError('Failed to load dashboard data');
-        } finally {
-            setLoading(false);
-        }
-    };
-
     fetchData();
   }, []);
+
+  const fetchAvailableProperties = async () => {
+      try {
+          const response = await api.get('/admin/reo/lease/available-properties');
+          setAvailableProperties(response.data);
+      } catch (err) {
+          console.error('Error fetching available properties:', err);
+      }
+  };
+
+  const handleSaveLease = async () => {
+      try {
+          await api.post(`/admin/reo/${newLease.property_id}/lease`, newLease);
+          setShowAddLeaseModal(false);
+          setNewLease({
+              property_id: '',
+              tenant_name: '',
+              monthly_rent: '',
+              security_deposit: '',
+              lease_start: '',
+              lease_end: '',
+              notes: ''
+          });
+          fetchData(); // Refresh data
+      } catch (err) {
+          console.error('Error creating lease:', err);
+          alert('Failed to create lease');
+      }
+  };
 
   if (loading) return <div className="p-8 text-center">Loading...</div>;
   if (error) return <div className="p-8 text-center text-red-600">{error}</div>;
@@ -297,6 +334,10 @@ export default function REOLeased() {
                 {actionButtons.exportRentRoll.label}
               </button>
               <button
+                onClick={() => {
+                  setShowAddLeaseModal(true);
+                  fetchAvailableProperties();
+                }}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -1106,6 +1147,218 @@ export default function REOLeased() {
           </div>
         </div>
       </div>
+
+      {/* Add Lease Modal */}
+      {showAddLeaseModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0, 0, 0, 0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 50
+        }}>
+          <div style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: 12,
+            width: '100%',
+            maxWidth: '500px',
+            padding: '24px',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)',
+            maxHeight: '90vh',
+            overflowY: 'auto'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+              <h2 style={{ fontSize: '20px', fontWeight: 600, color: '#0F172A', margin: 0 }}>Add New Lease</h2>
+              <button
+                onClick={() => setShowAddLeaseModal(false)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#64748B' }}
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                  Property
+                </label>
+                <select
+                  value={newLease.property_id}
+                  onChange={(e) => setNewLease({...newLease, property_id: e.target.value})}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: 8,
+                    border: '1px solid #E2E8F0',
+                    fontSize: '14px'
+                  }}
+                >
+                  <option value="">Select a property...</option>
+                  {availableProperties.map((prop) => (
+                    <option key={prop.id} value={prop.id}>
+                      {prop.address} {prop.city ? `, ${prop.city}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                  Tenant Name
+                </label>
+                <input
+                  type="text"
+                  value={newLease.tenant_name}
+                  onChange={(e) => setNewLease({...newLease, tenant_name: e.target.value})}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: 8,
+                    border: '1px solid #E2E8F0',
+                    fontSize: '14px'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                    Monthly Rent
+                  </label>
+                  <input
+                    type="number"
+                    value={newLease.monthly_rent}
+                    onChange={(e) => setNewLease({...newLease, monthly_rent: e.target.value})}
+                    placeholder="0.00"
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      borderRadius: 8,
+                      border: '1px solid #E2E8F0',
+                      fontSize: '14px'
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                    Security Deposit
+                  </label>
+                  <input
+                    type="number"
+                    value={newLease.security_deposit}
+                    onChange={(e) => setNewLease({...newLease, security_deposit: e.target.value})}
+                    placeholder="0.00"
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      borderRadius: 8,
+                      border: '1px solid #E2E8F0',
+                      fontSize: '14px'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                    Lease Start
+                  </label>
+                  <input
+                    type="date"
+                    value={newLease.lease_start}
+                    onChange={(e) => setNewLease({...newLease, lease_start: e.target.value})}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      borderRadius: 8,
+                      border: '1px solid #E2E8F0',
+                      fontSize: '14px'
+                    }}
+                  />
+                </div>
+                <div>
+                  <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                    Lease End
+                  </label>
+                  <input
+                    type="date"
+                    value={newLease.lease_end}
+                    onChange={(e) => setNewLease({...newLease, lease_end: e.target.value})}
+                    style={{
+                      width: '100%',
+                      padding: '10px',
+                      borderRadius: 8,
+                      border: '1px solid #E2E8F0',
+                      fontSize: '14px'
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '14px', fontWeight: 500, color: '#0F172A', marginBottom: 6 }}>
+                  Notes
+                </label>
+                <textarea
+                  value={newLease.notes}
+                  onChange={(e) => setNewLease({...newLease, notes: e.target.value})}
+                  rows={3}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: 8,
+                    border: '1px solid #E2E8F0',
+                    fontSize: '14px',
+                    resize: 'none'
+                  }}
+                />
+              </div>
+
+              <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                <button
+                  onClick={() => setShowAddLeaseModal(false)}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: 8,
+                    border: '1px solid #E2E8F0',
+                    backgroundColor: '#FFFFFF',
+                    color: '#64748B',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    cursor: 'pointer'
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveLease}
+                  disabled={!newLease.property_id || !newLease.tenant_name}
+                  style={{
+                    flex: 1,
+                    padding: '10px',
+                    borderRadius: 8,
+                    border: 'none',
+                    backgroundColor: (!newLease.property_id || !newLease.tenant_name) ? '#94A3B8' : '#1D4ED8',
+                    color: '#FFFFFF',
+                    fontSize: '14px',
+                    fontWeight: 500,
+                    cursor: (!newLease.property_id || !newLease.tenant_name) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  Save Lease
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

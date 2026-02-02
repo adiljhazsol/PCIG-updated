@@ -97,9 +97,7 @@ export default function FIFAImport() {
     formData.append('notes', importNotes);
 
     try {
-      await api.post('/admin/fifa/import', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+      await api.post('/admin/fifa/import', formData);
       alert('Import started successfully!');
       // Refresh dashboard
       const response = await api.get('/admin/fifa/import-dashboard-data');

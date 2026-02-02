@@ -136,11 +136,7 @@ export default function KYCVerification() {
         formData.append('file', selectedFile);
         formData.append('type', 'driver_license'); // Defaulting to driver_license
         
-        await api.post('/investor/kyc/upload', formData, {
-            headers: {
-                'Content-Type': 'multipart/form-data',
-            },
-        });
+        await api.post('/investor/kyc/upload', formData);
       }
 
       navigate('/investor/pending-approval');

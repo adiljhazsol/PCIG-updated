@@ -14,11 +14,19 @@ class LawyerPayoffRequest extends Model
         'property_id',
         'lawyer_name',
         'lawyer_email',
+        'lawyer_phone',
         'firm_name',
         'client_name',
         'amount',
         'status',
         'notes',
+        'billing_address',
+        'billing_city',
+        'billing_state',
+        'billing_zip',
+        'payment_method',
+        'payment_status',
+        'transaction_id',
     ];
 
     protected $casts = [

@@ -25,7 +25,7 @@ class K1Form extends Model
         'data' => 'array',
     ];
 
-    public function investor(): BelongsTo
+    public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
     }

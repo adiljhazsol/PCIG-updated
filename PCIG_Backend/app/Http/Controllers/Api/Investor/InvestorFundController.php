@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api\Investor;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\FundResource;
 use App\Models\Fund;
+use App\Models\BankAccount;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use App\Http\Requests\Api\Investor\InvestFundRequest;
@@ -15,7 +16,7 @@ use Illuminate\Support\Facades\DB;
 
 class InvestorFundController extends Controller
 {
-    public function list(Request $request): JsonResponse
+    public function index(Request $request): JsonResponse
     {
         $query = Fund::query();
 
@@ -30,7 +31,7 @@ class InvestorFundController extends Controller
         // The previous code had: $query->where('status', 'open');
         // But some funds in DB have status 'active'.
         
-        $query->whereIn('status', ['open', 'active']);
+        $query->whereIn('status', ['open', 'active', 'coming_soon', 'closed', 'liquidating']);
 
         // Search by name
         if ($request->has('search')) {
@@ -66,7 +67,7 @@ class InvestorFundController extends Controller
     public function show(Request $request, $id): JsonResponse
     {
         $fund = Fund::with(['fundProperties.property', 'fundInvestments'])
-            ->whereIn('status', ['open', 'active'])
+            ->whereIn('status', ['open', 'active', 'coming_soon', 'closed', 'liquidating'])
             ->findOrFail($id);
 
         // Calculate fund composition
@@ -97,6 +98,25 @@ class InvestorFundController extends Controller
         try {
             $fund = Fund::lockForUpdate()->findOrFail($request->fund_id);
 
+            // Validate Bank Account ownership
+            $bankAccount = BankAccount::where('id', $request->bank_account_id)
+                ->where('user_id', $user->id)
+                ->first();
+
+            if (!$bankAccount) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid bank account selected.',
+                ], 400);
+            }
+
+            if ($bankAccount->status !== 'verified') {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Bank account must be verified.',
+                ], 400);
+            }
+
             // Validate fund is open or active
             if (!in_array($fund->status, ['open', 'active'])) {
                 return response()->json([
@@ -110,6 +130,14 @@ class InvestorFundController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => "Minimum investment is $" . number_format($fund->min_investment, 2),
+                ], 400);
+            }
+
+            // Validate price per share to avoid division by zero
+            if ($fund->price_per_share <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Fund configuration error: Price per share is not set.',
                 ], 400);
             }
 
@@ -160,6 +188,13 @@ class InvestorFundController extends Controller
                 'description' => "Investment in {$fund->name}",
                 'status' => 'completed',
                 'reference_number' => 'FUND-INV-' . str_pad($fundInvestment->id, 8, '0', STR_PAD_LEFT),
+                'metadata' => [
+                    'bank_account_id' => $bankAccount->id,
+                    'bank_name' => $bankAccount->bank_name,
+                    'account_last_4' => $bankAccount->account_number_last_4,
+                    'shares' => $shares,
+                    'price_per_share' => $fund->price_per_share
+                ]
             ]);
 
             DB::commit();
@@ -238,6 +273,20 @@ class InvestorFundController extends Controller
                 'return_percentage' => $fundInvestment->amount > 0 ? (float) (($totalReturn / $fundInvestment->amount) * 100) : 0,
                 'distributions_count' => $distributions->count(),
             ],
+        ]);
+    }
+
+    public function myInvestments(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $investments = FundInvestment::with('fund')
+            ->where('user_id', $user->id)
+            ->orderBy('created_at', 'desc')
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $investments
         ]);
     }
 }

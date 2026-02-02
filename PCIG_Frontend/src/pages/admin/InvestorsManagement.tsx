@@ -15,7 +15,13 @@ import {
   ChevronDown,
   Loader2,
   AlertCircle,
-  ChevronLeft
+  ChevronLeft,
+  Eye,
+  Mail,
+  Edit,
+  Trash2,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import AdminNav from '../../components/admin/AdminNav';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
@@ -207,6 +213,16 @@ export default function InvestorsManagement() {
   const [kycFilter, setKycFilter] = useState('All Levels');
   const [accreditationFilter, setAccreditationFilter] = useState('All Types');
   const [page, setPage] = useState(1);
+
+  // Menu State
+  const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = () => setActiveMenuId(null);
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
+  }, []);
 
   const fetchData = async () => {
     setLoading(true);
@@ -780,8 +796,178 @@ export default function InvestorsManagement() {
                               <td style={{ padding: '10px 12px', fontWeight: 600, color: '#0F172A' }}>{row.total}</td>
                               <td style={{ padding: '10px 12px', color: '#64748B' }}>{row.registration}</td>
                               <td style={{ padding: '10px 12px', color: '#64748B' }}>{row.lastActivity}</td>
-                              <td style={{ padding: '10px 12px' }}>
-                                <MoreHorizontal style={{ width: 16, height: 16, color: '#94A3B8' }} />
+                              <td style={{ padding: '10px 12px', position: 'relative' }}>
+                                <div 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveMenuId(activeMenuId === row.id ? null : row.id);
+                                  }}
+                                  style={{
+                                    cursor: 'pointer',
+                                    padding: 6,
+                                    borderRadius: 4,
+                                    display: 'inline-flex',
+                                    backgroundColor: activeMenuId === row.id ? '#F1F5F9' : 'transparent',
+                                    transition: 'background-color 0.2s'
+                                  }}
+                                >
+                                  <MoreHorizontal style={{ width: 16, height: 16, color: '#94A3B8' }} />
+                                </div>
+
+                                {activeMenuId === row.id && (
+                                  <div
+                                    style={{
+                                      position: 'absolute',
+                                      right: 30,
+                                      top: 10,
+                                      backgroundColor: '#FFFFFF',
+                                      borderRadius: 8,
+                                      boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                                      border: '1px solid #E2E8F0',
+                                      zIndex: 50,
+                                      minWidth: 180,
+                                      padding: 4,
+                                      display: 'flex',
+                                      flexDirection: 'column',
+                                      gap: 2
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <button
+                                      onClick={() => navigate(`/admin/investors/${row.id}`)}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        padding: '8px 12px',
+                                        fontSize: 13,
+                                        color: '#334155',
+                                        border: 'none',
+                                        backgroundColor: 'transparent',
+                                        cursor: 'pointer',
+                                        textAlign: 'left',
+                                        width: '100%',
+                                        borderRadius: 4
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F8FAFC'}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                      <Eye size={14} /> View Profile
+                                    </button>
+                                    
+                                    <button
+                                      onClick={() => window.location.href = `mailto:${row.email}`}
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        padding: '8px 12px',
+                                        fontSize: 13,
+                                        color: '#334155',
+                                        border: 'none',
+                                        backgroundColor: 'transparent',
+                                        cursor: 'pointer',
+                                        textAlign: 'left',
+                                        width: '100%',
+                                        borderRadius: 4
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F8FAFC'}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                      <Mail size={14} /> Send Email
+                                    </button>
+
+                                    <button
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        padding: '8px 12px',
+                                        fontSize: 13,
+                                        color: '#334155',
+                                        border: 'none',
+                                        backgroundColor: 'transparent',
+                                        cursor: 'pointer',
+                                        textAlign: 'left',
+                                        width: '100%',
+                                        borderRadius: 4
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F8FAFC'}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                      <Edit size={14} /> Edit Details
+                                    </button>
+
+                                    {row.kyc === 'Pending' && (
+                                      <>
+                                        <div style={{ height: 1, backgroundColor: '#E2E8F0', margin: '4px 0' }} />
+                                        <button
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 8,
+                                            padding: '8px 12px',
+                                            fontSize: 13,
+                                            color: '#16A34A',
+                                            border: 'none',
+                                            backgroundColor: 'transparent',
+                                            cursor: 'pointer',
+                                            textAlign: 'left',
+                                            width: '100%',
+                                            borderRadius: 4
+                                          }}
+                                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#F0FDF4'}
+                                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                        >
+                                          <CheckCircle size={14} /> Approve KYC
+                                        </button>
+                                        <button
+                                          style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: 8,
+                                            padding: '8px 12px',
+                                            fontSize: 13,
+                                            color: '#DC2626',
+                                            border: 'none',
+                                            backgroundColor: 'transparent',
+                                            cursor: 'pointer',
+                                            textAlign: 'left',
+                                            width: '100%',
+                                            borderRadius: 4
+                                          }}
+                                          onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#FEF2F2'}
+                                          onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                        >
+                                          <XCircle size={14} /> Reject KYC
+                                        </button>
+                                      </>
+                                    )}
+
+                                    <div style={{ height: 1, backgroundColor: '#E2E8F0', margin: '4px 0' }} />
+                                    
+                                    <button
+                                      style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: 8,
+                                        padding: '8px 12px',
+                                        fontSize: 13,
+                                        color: '#DC2626',
+                                        border: 'none',
+                                        backgroundColor: 'transparent',
+                                        cursor: 'pointer',
+                                        textAlign: 'left',
+                                        width: '100%',
+                                        borderRadius: 4
+                                      }}
+                                      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#FEF2F2'}
+                                      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                                    >
+                                      <Trash2 size={14} /> Delete Investor
+                                    </button>
+                                  </div>
+                                )}
                               </td>
                             </tr>
                           ))

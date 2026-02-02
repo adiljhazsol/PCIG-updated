@@ -12,12 +12,14 @@ use App\Models\Investment;
 use App\Models\Transaction;
 use App\Models\Distribution;
 use Illuminate\Support\Facades\DB;
+use Barryvdh\DomPDF\Facade\Pdf;
+use Illuminate\Support\Facades\Log;
 
 class InvestorPropertyController extends Controller
 {
     public function list(Request $request): JsonResponse
     {
-        $query = Property::with('primaryImage');
+        $query = Property::with(['primaryImage', 'redemptionTracking']);
 
         // Search by address or parcel ID
         if ($request->has('search')) {
@@ -59,8 +61,8 @@ class InvestorPropertyController extends Controller
             $query->where('roi', '>=', $request->min_roi);
         }
 
-        // Only show properties with available shares
-        $query->where('available_shares', '>', 0);
+        // Only show properties with available shares - DISABLED per user request to show ALL properties
+        // $query->where('available_shares', '>', 0);
 
         // Sorting
         $sortBy = $request->get('sort_by', 'created_at');
@@ -86,7 +88,7 @@ class InvestorPropertyController extends Controller
     public function show(Request $request, $id): JsonResponse
     {
         $property = Property::with(['images', 'documents'])
-            ->where('available_shares', '>', 0)
+            // ->where('available_shares', '>', 0) // Disabled to allow viewing sold properties
             ->findOrFail($id);
 
         return response()->json([
@@ -97,30 +99,26 @@ class InvestorPropertyController extends Controller
 
     public function detailDashboardData(Request $request, $id): JsonResponse
     {
-        $property = Property::with([
-            'images',
-            'documents',
-            'investments.user',
-            'reoProperty',
-            'auction',
-            'redemptionTracking',
-            'sheriffSale',
-            'quietTitleCase',
-            'barmentCase'
-        ])->findOrFail($id);
-
-        // 1. Header
+        $property = Property::with(['redemptionTracking', 'sheriffSale', 'reoLease'])->findOrFail($id);
+        
+        $typeMap = [
+            'tax_deed' => 'Tax Deed',
+            'sheriff_sale' => 'Sheriff Sale',
+            'reo' => 'REO',
+            'acquisition' => 'Acquisition'
+        ];
+        
         $header = [
-            'details' => 'Detail Overview • ' . ($property->parcel_id ?? 'Unknown ID'),
-            'address' => $property->address ?? 'Unknown Address',
-            'status' => ucfirst($property->status ?? 'pending'),
-            'type' => 'Tax Deed', // Mock or derive
+            'type' => $typeMap[$property->workflow_stage] ?? 'Tax Deed',
+            'address' => $property->address,
+            'status' => ucfirst($property->status),
+            'lastUpdated' => $property->updated_at->format('M d, Y')
         ];
 
         // 2. Alerts (Mock logic based on status/deadlines)
         $alerts = [];
         if ($property->status === 'redemption' && $property->redemptionTracking) {
-            $deadline = $property->redemptionTracking->expiration_date;
+            $deadline = $property->redemptionTracking->redemption_deadline;
             if ($deadline && $deadline->diffInDays(now()) < 7) {
                 $alerts[] = [
                     'type' => 'critical',
@@ -136,40 +134,59 @@ class InvestorPropertyController extends Controller
             ];
         }
 
-        // 3. Redemption Engine
-        $redemptionEngine = [
-            'countdown' => [
-                'days' => 0,
-                'hours' => 0,
-                'minutes' => 0
-            ],
-            'deadline' => 'N/A',
-            'bidPrice' => '$' . number_format($property->purchase_price ?? 0, 2),
-            'accruedInterest' => '$0.00',
-            'expenses' => '$0.00',
-            'estimatedPayoff' => '$0.00',
-            'dailyAccrual' => ['amount' => '$0.00', 'per' => 'day']
-        ];
-
+        // Redemption Engine Calculations
+        $bidPrice = $property->purchase_price ?? 0;
+        $penaltyRate = 0.20; // Standard 20% penalty
         if ($property->redemptionTracking) {
-            $deadline = $property->redemptionTracking->expiration_date;
-            if ($deadline) {
-                $now = now();
-                $diff = $now->diff($deadline);
-                $redemptionEngine['countdown'] = [
-                    'days' => $diff->days,
-                    'hours' => $diff->h,
-                    'minutes' => $diff->i
-                ];
-                $redemptionEngine['deadline'] = $deadline->format('M d, Y');
-            }
-            // Mock calculations for now
-            $bidPrice = $property->purchase_price ?? 0;
-            $interest = $bidPrice * 0.12; // 12% mock
-            $redemptionEngine['accruedInterest'] = '$' . number_format($interest, 2);
-            $redemptionEngine['estimatedPayoff'] = '$' . number_format($bidPrice + $interest, 2);
-            $redemptionEngine['dailyAccrual']['amount'] = '$' . number_format($interest / 365, 2);
+             $redemptionAmount = $property->redemptionTracking->redemption_amount;
+             $interest = $redemptionAmount - $bidPrice;
+             $deadline = $property->redemptionTracking->redemption_deadline;
+        } else {
+             // Estimate
+             $interest = $bidPrice * $penaltyRate;
+             $deadline = null;
         }
+        
+        $countdown = [
+            'days' => 0,
+            'hours' => 0,
+            'minutes' => 0
+        ];
+        
+        if ($deadline) {
+            $now = now();
+            if ($deadline->gt($now)) {
+                $diff = $deadline->diff($now);
+                $countdown['days'] = $diff->days;
+                $countdown['hours'] = $diff->h;
+                $countdown['minutes'] = $diff->i;
+            }
+        }
+        
+        $redemptionEngine = [
+            'bidPrice' => '$' . number_format($bidPrice, 2),
+            'penaltyRate' => ($penaltyRate * 100) . '%',
+            'accruedInterest' => '$' . number_format($interest, 2),
+            'totalRedemption' => '$' . number_format($bidPrice + $interest, 2),
+            'dailyInterest' => '$' . number_format(($bidPrice * $penaltyRate) / 365, 2),
+            'nextPenaltyDate' => now()->addMonths(1)->format('M d, Y'),
+            'deadline' => $deadline ? $deadline->format('M d, Y') : 'N/A',
+            'countdown' => $countdown,
+            'expenses' => '$0.00',
+            'estimatedPayoff' => '$' . number_format($bidPrice + $interest, 2),
+            'dailyAccrual' => [
+                'amount' => '$' . number_format(($bidPrice * $penaltyRate) / 365, 2),
+                'per' => 'per day'
+            ]
+        ];
+        
+        // Add investment details
+        $investmentDetails = [
+            'id' => $property->id,
+            'address' => $property->address,
+            'price_per_share' => (float) $property->price_per_share,
+            'available_shares' => (int) $property->available_shares,
+        ];
 
         // 4. Workflow Timeline
         $stages = ['research', 'fifa', 'auction', 'redemption', 'barment', 'quiet_title', 'reo_disposition'];
@@ -259,10 +276,10 @@ class InvestorPropertyController extends Controller
         $propertyInfo = [
             'details' => [
                 ['label' => 'Parcel ID', 'value' => $property->parcel_id],
-                ['label' => 'Legal Description', 'value' => 'Lot 5 Block 3...'], // Mock or add field
-                ['label' => 'Zoning', 'value' => 'Residential'], // Mock or add field
-                ['label' => 'Lot Size', 'value' => '0.25 Acres'], // Mock or add field
-                ['label' => 'Year Built', 'value' => '1985'] // Mock or add field
+                ['label' => 'Legal Description', 'value' => $property->legal_description ?? 'N/A'],
+                ['label' => 'Zoning', 'value' => $property->zoning ?? 'N/A'],
+                ['label' => 'Lot Size', 'value' => $property->lot_size ?? 'N/A'],
+                ['label' => 'Year Built', 'value' => $property->year_built ?? 'N/A']
             ],
             // Investor view might have different sections, but sticking to structure for now
         ];
@@ -277,7 +294,8 @@ class InvestorPropertyController extends Controller
                 'moduleConnections' => $moduleConnections,
                 'documents' => $documents,
                 'activityLog' => $activityLog,
-                'propertyInfo' => $propertyInfo
+                'propertyInfo' => $propertyInfo,
+                'investmentDetails' => $investmentDetails
             ]
         ]);
     }
@@ -304,9 +322,13 @@ class InvestorPropertyController extends Controller
             // Create investment
             $investment = Investment::create([
                 'user_id' => $user->id,
+                'investment_id' => 'INV-' . strtoupper(uniqid()),
+                'name' => $property->address ?? 'Property Investment',
+                'type' => 'Property',
                 'property_id' => $property->id,
                 'shares' => $request->shares,
                 'amount' => $amount,
+                'current_value' => (string) $amount,
                 'price_per_share' => $property->price_per_share,
                 'purchase_date' => now(),
                 'status' => 'active',
@@ -398,5 +420,27 @@ class InvestorPropertyController extends Controller
                 'distributions_count' => $distributions->count(),
             ],
         ]);
+    }
+
+    public function generatePayoffLetter($id)
+    {
+        try {
+            $property = Property::with(['redemptionTracking', 'interestCalculations'])->findOrFail($id);
+            // Reusing the same PDF view as Admin
+            $pdf = Pdf::loadView('pdf.payoff_letter', compact('property'));
+            
+            return response($pdf->output())
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'attachment; filename="payoff_letter_' . $property->id . '.pdf"')
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        } catch (\Exception $e) {
+            Log::error('Payoff Letter Error: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to generate PDF: ' . $e->getMessage()], 500)
+                ->header('Access-Control-Allow-Origin', '*')
+                ->header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+                ->header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        }
     }
 }

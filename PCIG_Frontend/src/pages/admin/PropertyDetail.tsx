@@ -39,6 +39,7 @@ export default function PropertyDetail() {
     // State for dynamic data
     const [data, setData] = useState<any>(null);
     const [loading, setLoading] = useState(true);
+    const [downloading, setDownloading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
@@ -69,7 +70,136 @@ export default function PropertyDetail() {
         workflow_stage: ''
     });
     const [isPayoffLetterModalOpen, setIsPayoffLetterModalOpen] = useState(false);
+    const [isProcessPayoffModalOpen, setIsProcessPayoffModalOpen] = useState(false);
+    const [processPayoffData, setProcessPayoffData] = useState({
+        amount: '',
+        date: new Date().toISOString().split('T')[0]
+    });
     const [isBreakdownModalOpen, setIsBreakdownModalOpen] = useState(false);
+    const [countdown, setCountdown] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+
+    // Initialize countdown from data
+    useEffect(() => {
+        if (data?.redemptionEngine?.countdown) {
+            setCountdown({
+                ...data.redemptionEngine.countdown,
+                seconds: 0
+            });
+        }
+    }, [data]);
+
+    // Live countdown effect
+    useEffect(() => {
+        if (!data?.redemptionEngine?.deadlineIso) {
+             setCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+             return;
+        }
+
+        const interval = setInterval(() => {
+            const deadline = new Date(data.redemptionEngine.deadlineIso).getTime();
+            const now = new Date().getTime();
+            const distance = deadline - now;
+
+            if (distance < 0) {
+                setCountdown({ days: 0, hours: 0, minutes: 0, seconds: 0 });
+                clearInterval(interval);
+                return;
+            }
+
+            setCountdown({
+                days: Math.floor(distance / (1000 * 60 * 60 * 24)),
+                hours: Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60)),
+                minutes: Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60)),
+                seconds: Math.floor((distance % (1000 * 60)) / 1000)
+            });
+        }, 1000);
+
+        return () => clearInterval(interval);
+    }, [data?.redemptionEngine?.deadlineIso]);
+
+    const handleGeneratePayoffLetter = () => {
+        setIsPayoffLetterModalOpen(true);
+    };
+
+    const handleDownloadPayoffLetter = async (e?: React.MouseEvent) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        if (downloading) return;
+
+        try {
+            setDownloading(true);
+            const targetId = (id || "1").replace('PROP-', '');
+            const response = await api.get(`/admin/redemption/${targetId}/payoff-letter`, {
+                responseType: 'blob'
+            });
+
+            // Verify content type
+            const contentType = response.headers['content-type'];
+            if (contentType && !contentType.includes('application/pdf')) {
+                 // Try to read the error message if it's JSON
+                 if (contentType.includes('application/json')) {
+                     const text = await response.data.text();
+                     console.error('Backend returned JSON error:', text);
+                     try {
+                         const json = JSON.parse(text);
+                         throw new Error(json.error || json.message || 'Server error');
+                     } catch (e) {
+                         throw new Error('Server returned error: ' + text);
+                     }
+                 }
+                throw new Error('Received invalid content type: ' + contentType);
+            }
+
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `payoff_letter_${targetId}.pdf`);
+            document.body.appendChild(link);
+            link.click();
+            
+            // Cleanup with delay
+            setTimeout(() => {
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+            }, 100);
+        } catch (err: any) {
+            console.error('Failed to download payoff letter', err);
+            // Alert removed as per user request (false positives occurring despite successful download)
+            // alert(`Failed to download payoff letter: ${err.message || err}`);
+        } finally {
+            setDownloading(false);
+        }
+    };
+
+    const handleProcessPayoff = () => {
+        // Pre-fill amount if available
+        if (data?.redemptionEngine?.estimatedPayoff) {
+            const amount = data.redemptionEngine.estimatedPayoff.replace(/[^0-9.]/g, '');
+            setProcessPayoffData(prev => ({ ...prev, amount }));
+        }
+        setIsProcessPayoffModalOpen(true);
+    };
+
+    const handleProcessPayoffSubmit = async () => {
+        try {
+            const targetId = id?.replace('PROP-', '') || '';
+            await api.post(`/admin/redemption/${targetId}/redeem`, {
+                redemption_amount: parseFloat(processPayoffData.amount),
+                redeemed_at: processPayoffData.date
+            });
+            setIsProcessPayoffModalOpen(false);
+            alert('Redemption processed successfully');
+            // Refresh data
+            const response = await api.get(`/admin/properties/${targetId}/detail-dashboard`);
+            setData(response.data.data);
+        } catch (err) {
+            console.error('Failed to process payoff', err);
+            alert('Failed to process payoff. Please try again.');
+        }
+    };
 
     // Update edit form data when data loads
     useEffect(() => {
@@ -90,8 +220,11 @@ export default function PropertyDetail() {
             updatedData.header.status = editFormData.status;
             setData(updatedData);
             
+            // Clean ID for API call
+            const targetId = id?.replace('PROP-', '') || '';
+
             // API call
-            await api.put(`/admin/properties/${id}`, {
+            await api.put(`/admin/properties/${targetId}`, {
                 address: editFormData.address,
                 status: editFormData.status.toLowerCase(),
                 // Map status to workflow stage for now if needed, or keep separate
@@ -103,14 +236,6 @@ export default function PropertyDetail() {
             console.error('Failed to update property', err);
             // Revert would go here
         }
-    };
-
-    const handleGeneratePayoffLetter = () => {
-        setIsPayoffLetterModalOpen(true);
-    };
-
-    const handlePrintPayoffLetter = () => {
-        window.print();
     };
 
     if (loading) {
@@ -336,7 +461,11 @@ export default function PropertyDetail() {
                                 }}>
                                     <div style={{ fontSize: 12, fontWeight: 700, color: '#991B1B', textTransform: 'uppercase', marginBottom: 8, letterSpacing: '0.05em' }}>Time Remaining</div>
                                     <div style={{ fontSize: isMobile ? 18 : 32, fontWeight: 700, color: '#991B1B', wordBreak: 'break-word', lineHeight: 1.2 }}>
-                                        {redemptionEngine.countdown.days} days, {redemptionEngine.countdown.hours} hours, {redemptionEngine.countdown.minutes} mins
+                                        {data?.redemptionEngine?.deadlineIso ? (
+                                            `${countdown.days} days, ${countdown.hours} hours, ${countdown.minutes} mins, ${countdown.seconds} s`
+                                        ) : (
+                                            <span style={{ fontSize: 24, color: '#64748B' }}>No Deadline Set</span>
+                                        )}
                                     </div>
                                     <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 4, backgroundColor: '#FECACA' }}>
                                         <div style={{ width: '35%', height: '100%', backgroundColor: '#DC2626' }} />
@@ -372,7 +501,10 @@ export default function PropertyDetail() {
                                     >
                                         <FileText size={16} /> Generate Payoff Letter
                                     </button>
-                                    <button onClick={() => navigate('/admin/properties/redemption-tracking')} style={{ flex: 1, backgroundColor: '#0F172A', color: '#fff', border: 'none', padding: '12px', borderRadius: 6, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
+                                    <button 
+                                        onClick={handleProcessPayoff}
+                                        style={{ flex: 1, backgroundColor: '#0F172A', color: '#fff', border: 'none', padding: '12px', borderRadius: 6, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}
+                                    >
                                         Process Payoff
                                     </button>
                                 </div>
@@ -540,7 +672,7 @@ export default function PropertyDetail() {
                 
                 {/* Edit Modal */}
                 {isEditModalOpen && (
-                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
                         <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, width: '100%', maxWidth: 500, margin: 16 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                                 <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Edit Property</h3>
@@ -585,7 +717,7 @@ export default function PropertyDetail() {
 
                 {/* Payoff Letter Modal */}
                 {isPayoffLetterModalOpen && (
-                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
                         <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 0, width: '100%', maxWidth: 800, height: '90vh', margin: 16, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                             <div style={{ padding: 16, borderBottom: '1px solid #E2E8F0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                 <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Payoff Letter Preview</h3>
@@ -599,7 +731,7 @@ export default function PropertyDetail() {
                                     </div>
                                     <div style={{ marginBottom: 40 }}>
                                         <p><strong>Property Address:</strong> {data?.header?.address}</p>
-                                        <p><strong>Parcel ID:</strong> {data?.header?.details.replace('Detail Overview • ', '')}</p>
+                                        <p><strong>Parcel ID:</strong> {data?.header?.details ? data.header.details.replace('Detail Overview • ', '') : 'N/A'}</p>
                                     </div>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 40 }}>
                                         <thead>
@@ -643,9 +775,69 @@ export default function PropertyDetail() {
                             </div>
                             <div style={{ padding: 16, borderTop: '1px solid #E2E8F0', display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
                                 <button onClick={() => setIsPayoffLetterModalOpen(false)} style={{ padding: '10px 20px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', fontWeight: 600 }}>Cancel</button>
-                                <button onClick={handlePrintPayoffLetter} style={{ padding: '10px 20px', borderRadius: 6, background: '#0F172A', color: '#fff', border: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <Printer size={16} /> Print / Download PDF
+                                <button 
+                                    onClick={handleDownloadPayoffLetter} 
+                                    disabled={downloading}
+                                    style={{ 
+                                        padding: '10px 20px', 
+                                        borderRadius: 6, 
+                                        background: downloading ? '#94A3B8' : '#0F172A', 
+                                        color: '#fff', 
+                                        border: 'none', 
+                                        fontWeight: 600, 
+                                        display: 'flex', 
+                                        alignItems: 'center', 
+                                        gap: 8,
+                                        cursor: downloading ? 'not-allowed' : 'pointer'
+                                    }}
+                                >
+                                    <Printer size={16} /> {downloading ? 'Downloading...' : 'Print / Download PDF'}
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Process Payoff Modal */}
+                {isProcessPayoffModalOpen && (
+                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+                        <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, width: '100%', maxWidth: 500, margin: 16 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                                <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Process Payoff</h3>
+                                <button onClick={() => setIsProcessPayoffModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                                    <AlertCircle size={20} color="#64748B" style={{ transform: 'rotate(45deg)' }} />
+                                </button>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Redemption Amount</label>
+                                    <div style={{ position: 'relative' }}>
+                                        <span style={{ position: 'absolute', left: 12, top: 10, color: '#64748B' }}>$</span>
+                                        <input 
+                                            type="number" 
+                                            step="0.01"
+                                            value={processPayoffData.amount}
+                                            onChange={(e) => setProcessPayoffData({...processPayoffData, amount: e.target.value})}
+                                            style={{ width: '100%', padding: '8px 12px 8px 24px', border: '1px solid #E2E8F0', borderRadius: 6, boxSizing: 'border-box' }}
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', fontSize: 14, fontWeight: 600, marginBottom: 8 }}>Redemption Date</label>
+                                    <input 
+                                        type="date" 
+                                        value={processPayoffData.date}
+                                        onChange={(e) => setProcessPayoffData({...processPayoffData, date: e.target.value})}
+                                        style={{ width: '100%', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 6, boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                                <div style={{ backgroundColor: '#FFF7ED', border: '1px solid #FFEDD5', borderRadius: 6, padding: 12, fontSize: 13, color: '#9A3412' }}>
+                                    Warning: This will mark the property as redeemed and close the redemption period.
+                                </div>
+                                <div style={{ display: 'flex', gap: 12, marginTop: 8 }}>
+                                    <button onClick={() => setIsProcessPayoffModalOpen(false)} style={{ flex: 1, padding: 10, borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', fontWeight: 600 }}>Cancel</button>
+                                    <button onClick={handleProcessPayoffSubmit} style={{ flex: 1, padding: 10, borderRadius: 6, background: '#10B981', color: '#fff', border: 'none', fontWeight: 600 }}>Confirm Redemption</button>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -653,29 +845,23 @@ export default function PropertyDetail() {
 
                 {/* Breakdown Modal */}
                 {isBreakdownModalOpen && (
-                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
                         <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, width: '100%', maxWidth: 400, margin: 16 }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
                                 <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>Expense Breakdown</h3>
                                 <button onClick={() => setIsBreakdownModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>Close</button>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F1F5F9' }}>
-                                    <span style={{ color: '#64748B' }}>Filing Fees</span>
-                                    <span style={{ fontWeight: 600 }}>$0.00</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F1F5F9' }}>
-                                    <span style={{ color: '#64748B' }}>Legal Fees</span>
-                                    <span style={{ fontWeight: 600 }}>$0.00</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F1F5F9' }}>
-                                    <span style={{ color: '#64748B' }}>Certified Mail</span>
-                                    <span style={{ fontWeight: 600 }}>$0.00</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F1F5F9' }}>
-                                    <span style={{ color: '#64748B' }}>Title Search</span>
-                                    <span style={{ fontWeight: 600 }}>$0.00</span>
-                                </div>
+                                {redemptionEngine?.breakdown && redemptionEngine.breakdown.length > 0 ? (
+                                    redemptionEngine.breakdown.map((item: any, idx: number) => (
+                                        <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #F1F5F9' }}>
+                                            <span style={{ color: '#64748B' }}>{item.description} <span style={{fontSize: 11, color: '#94A3B8'}}>({item.date})</span></span>
+                                            <span style={{ fontWeight: 600 }}>{item.amount}</span>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div style={{ textAlign: 'center', padding: 20, color: '#64748B' }}>No expenses recorded</div>
+                                )}
                                 <div style={{ display: 'flex', justifyContent: 'space-between', padding: '12px 0', marginTop: 8, fontWeight: 700, fontSize: 16 }}>
                                     <span>Total Expenses</span>
                                     <span>{redemptionEngine?.expenses}</span>

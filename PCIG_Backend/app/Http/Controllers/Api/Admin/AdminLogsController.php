@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\ActivityLog;
 use App\Models\ExportLog;
 use App\Models\NoticeLog;
 use Illuminate\Http\JsonResponse;
@@ -10,6 +11,19 @@ use Illuminate\Http\Request;
 
 class AdminLogsController extends Controller
 {
+    /**
+     * Get system logs
+     */
+    public function index(Request $request): JsonResponse
+    {
+        $logs = ActivityLog::with('causer')->orderBy('created_at', 'desc')->paginate(20);
+
+        return response()->json([
+            'success' => true,
+            'data' => $logs,
+        ]);
+    }
+
     /**
      * Get export logs
      */

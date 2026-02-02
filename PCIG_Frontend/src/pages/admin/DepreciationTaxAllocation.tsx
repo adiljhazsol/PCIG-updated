@@ -8,7 +8,8 @@ import {
     ChevronDown,
     ChevronRight,
     MoreHorizontal,
-    Loader2
+    Loader2,
+    X
 } from 'lucide-react';
 import api from '../../services/api';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
@@ -27,22 +28,27 @@ export default function DepreciationTaxAllocation() {
     const [activeTab, setActiveTab] = useState('property-depreciation');
     const [selectedProperty, setSelectedProperty] = useState(0);
     const [showConfigPanel, setShowConfigPanel] = useState(false);
+    const [showSchedule, setShowSchedule] = useState(false);
 
     // Filter states
     const [searchQuery, setSearchQuery] = useState('');
-    const [yearFilter, setYearFilter] = useState('2023');
+    const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
     const [assetTypeFilter, setAssetTypeFilter] = useState('All Assets');
     
     const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-    const fetchData = async (query = searchQuery, year = yearFilter, assetType = assetTypeFilter) => {
+    const fetchData = async (query = searchQuery, year = yearFilter, assetType = assetTypeFilter, tab = activeTab) => {
         try {
             const params = new URLSearchParams();
             if (query) params.append('search', query);
             if (year) params.append('year', year);
             if (assetType && assetType !== 'All Assets') params.append('assetType', assetType);
+            if (tab) params.append('tab', tab);
 
-            const response = await api.get(`/admin/depreciation/dashboard-data?${params.toString()}`);
+            const token = localStorage.getItem('token');
+            const headers = token ? { Authorization: `Bearer ${token}` } : {};
+
+            const response = await api.get(`/admin/depreciation/dashboard-data?${params.toString()}`, { headers });
             setData(response.data.depreciationTaxAllocation);
             setError(null);
         } catch (err) {
@@ -55,7 +61,7 @@ export default function DepreciationTaxAllocation() {
 
     useEffect(() => {
         fetchData();
-    }, [yearFilter, assetTypeFilter]);
+    }, [yearFilter, assetTypeFilter, activeTab]);
 
     // Debounced search effect
     useEffect(() => {
@@ -136,6 +142,36 @@ export default function DepreciationTaxAllocation() {
             </span>
         );
     };
+
+    const [scheduleData, setScheduleData] = useState<any[]>([]);
+    const [scheduleLoading, setScheduleLoading] = useState(false);
+
+    const fetchSchedule = async () => {
+        if (!table || !table.rows || !table.rows[selectedProperty]) return;
+        
+        const row = table.rows[selectedProperty];
+        if (activeTab === 'tax-allocations') return;
+        
+        setScheduleLoading(true);
+        try {
+            const token = localStorage.getItem('token');
+            const headers = token ? { Authorization: `Bearer ${token}` } : {};
+            
+            const response = await api.get(`/admin/depreciation/schedule/${row.id}`, { headers });
+            setScheduleData(response.data.schedule);
+        } catch (error) {
+            console.error('Error fetching schedule:', error);
+            setScheduleData([]);
+        } finally {
+            setScheduleLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (showSchedule) {
+            fetchSchedule();
+        }
+    }, [showSchedule, selectedProperty]);
 
     if (loading) {
         return (
@@ -425,20 +461,43 @@ export default function DepreciationTaxAllocation() {
                                                     style={{ borderRadius: 4, border: '1px solid #CBD5E1' }}
                                                 />
                                             </td>
-                                            <td style={{ padding: 16 }}>
-                                                <div style={{ fontSize: 14, fontWeight: 500, color: '#0F172A' }}>{row.asset}</div>
-                                                <div style={{ fontSize: 12, color: '#64748B' }}>ID: {row.id}</div>
-                                            </td>
-                                            <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.type}</td>
-                                            <td style={{ padding: 16, fontSize: 14, fontWeight: 500, color: '#0F172A' }}>{row.costBasis}</td>
-                                            <td style={{ padding: 16 }}>
-                                                {getMethodBadge(row.method, row.methodColor)}
-                                            </td>
-                                            <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.recoveryPeriod}</td>
-                                            <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.placedInService}</td>
-                                            <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.accumulated}</td>
-                                            <td style={{ padding: 16, fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{row.currentYear}</td>
-                                            <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.netBookValue}</td>
+                                            
+                                            {activeTab === 'cost-segregation' ? (
+                                                <>
+                                                    <td style={{ padding: 16 }}>
+                                                        <div style={{ fontSize: 14, fontWeight: 500, color: '#0F172A' }}>{row.col1}</div>
+                                                        <div style={{ fontSize: 12, color: '#64748B' }}>ID: {row.id}</div>
+                                                    </td>
+                                                    <td style={{ padding: 16, fontSize: 14, fontWeight: 500, color: '#0F172A' }}>{row.col2}</td>
+                                                    <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.col3}</td>
+                                                    <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.col4}</td>
+                                                    <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.col5}</td>
+                                                    <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.col6}</td>
+                                                    <td style={{ padding: 16, fontSize: 14, fontWeight: 600, color: '#10B981' }}>{row.col7}</td>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <td style={{ padding: 16 }}>
+                                                        <div style={{ fontSize: 14, fontWeight: 500, color: '#0F172A' }}>{row.asset}</div>
+                                                        <div style={{ fontSize: 12, color: '#64748B' }}>ID: {row.id}</div>
+                                                    </td>
+                                                    <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.type}</td>
+                                                    <td style={{ padding: 16, fontSize: 14, fontWeight: 500, color: '#0F172A' }}>{row.costBasis}</td>
+                                                    <td style={{ padding: 16 }}>
+                                                        {row.methodColor ? getMethodBadge(row.method, row.methodColor) : <span style={{ fontSize: 14, color: '#64748B' }}>{row.method}</span>}
+                                                    </td>
+                                                    {activeTab === 'property-depreciation' && (
+                                                        <>
+                                                            <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.recoveryPeriod}</td>
+                                                            <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.placedInService}</td>
+                                                            <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.accumulated}</td>
+                                                        </>
+                                                    )}
+                                                    <td style={{ padding: 16, fontSize: 14, fontWeight: 600, color: '#0F172A' }}>{row.currentYear}</td>
+                                                    <td style={{ padding: 16, fontSize: 14, color: '#64748B' }}>{row.netBookValue}</td>
+                                                </>
+                                            )}
+                                            
                                             <td style={{ padding: 16 }}>
                                                 <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94A3B8' }}>
                                                     <MoreHorizontal size={16} />
@@ -485,7 +544,9 @@ export default function DepreciationTaxAllocation() {
                                         </div>
                                     ))}
                                 </div>
-                                <button style={{
+                                <button 
+                                    onClick={() => setShowSchedule(true)}
+                                    style={{
                                     width: '100%',
                                     marginTop: 20,
                                     padding: '10px',
@@ -508,6 +569,144 @@ export default function DepreciationTaxAllocation() {
                     )}
                 </div>
             </div>
+
+            {/* Schedule Modal */}
+            {showSchedule && (
+                <div style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    zIndex: 1000
+                }}>
+                    <div style={{
+                        backgroundColor: '#fff',
+                        borderRadius: 12,
+                        width: '90%',
+                        maxWidth: 800,
+                        maxHeight: '90vh',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+                    }}>
+                        <div style={{
+                            padding: 24,
+                            borderBottom: '1px solid #E2E8F0',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center'
+                        }}>
+                            <div>
+                                <h3 style={{ fontSize: 18, fontWeight: 600, color: '#0F172A' }}>Depreciation Schedule</h3>
+                                <p style={{ fontSize: 14, color: '#64748B', marginTop: 4 }}>
+                                    {table.rows[selectedProperty]?.asset}
+                                </p>
+                            </div>
+                            <button 
+                                onClick={() => setShowSchedule(false)}
+                                style={{
+                                    padding: 8,
+                                    borderRadius: 6,
+                                    border: 'none',
+                                    background: 'transparent',
+                                    cursor: 'pointer',
+                                    color: '#64748B'
+                                }}
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+                        
+                        <div style={{ padding: 24, overflowY: 'auto' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '1px solid #E2E8F0', textAlign: 'left' }}>
+                                        <th style={{ padding: 12, color: '#64748B', fontWeight: 600 }}>Year</th>
+                                        <th style={{ padding: 12, color: '#64748B', fontWeight: 600 }}>Rate</th>
+                                        <th style={{ padding: 12, color: '#64748B', fontWeight: 600 }}>Expense</th>
+                                        <th style={{ padding: 12, color: '#64748B', fontWeight: 600 }}>Accumulated</th>
+                                        <th style={{ padding: 12, color: '#64748B', fontWeight: 600 }}>Ending Balance</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {scheduleLoading ? (
+                                        <tr>
+                                            <td colSpan={5} style={{ padding: 24, textAlign: 'center' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8 }}>
+                                                    <Loader2 className="animate-spin" size={20} color="#64748B" />
+                                                    <span style={{ color: '#64748B' }}>Loading schedule...</span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    ) : scheduleData.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={5} style={{ padding: 24, textAlign: 'center', color: '#64748B' }}>
+                                                No schedule data available
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        scheduleData.map((row, idx) => (
+                                        <tr key={idx} style={{ borderBottom: '1px solid #F1F5F9' }}>
+                                            <td style={{ padding: 12, color: '#0F172A' }}>{row.year}</td>
+                                            <td style={{ padding: 12, color: '#64748B' }}>{row.rate}</td>
+                                            <td style={{ padding: 12, color: '#0F172A', fontWeight: 500 }}>
+                                                ${row.expense.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                            </td>
+                                            <td style={{ padding: 12, color: '#64748B' }}>
+                                                ${row.accumulated.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                            </td>
+                                            <td style={{ padding: 12, color: '#64748B' }}>
+                                                ${row.ending.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}
+                                            </td>
+                                        </tr>
+                                    )))}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div style={{
+                            padding: 16,
+                            borderTop: '1px solid #E2E8F0',
+                            display: 'flex',
+                            justifyContent: 'flex-end',
+                            gap: 12
+                        }}>
+                            <button 
+                                onClick={() => setShowSchedule(false)}
+                                style={{
+                                    padding: '8px 16px',
+                                    borderRadius: 6,
+                                    border: '1px solid #E2E8F0',
+                                    backgroundColor: '#fff',
+                                    color: '#0F172A',
+                                    fontWeight: 500,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Close
+                            </button>
+                            <button 
+                                style={{
+                                    padding: '8px 16px',
+                                    borderRadius: 6,
+                                    border: 'none',
+                                    backgroundColor: '#0F172A',
+                                    color: '#fff',
+                                    fontWeight: 500,
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                Export PDF
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

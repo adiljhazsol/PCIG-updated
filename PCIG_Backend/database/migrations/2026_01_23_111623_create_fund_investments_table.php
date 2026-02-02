@@ -11,19 +11,21 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('fund_investments', function (Blueprint $table) {
-            $table->id();
-            $table->foreignId('user_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('fund_id')->constrained()->cascadeOnDelete();
-            $table->integer('shares')->default(0);
-            $table->decimal('amount', 15, 2);
-            $table->decimal('price_per_share', 10, 2);
-            $table->date('purchase_date');
-            $table->enum('status', ['active', 'redeemed'])->default('active')->index();
-            $table->timestamps();
+        if (!Schema::hasTable('fund_investments')) {
+            Schema::create('fund_investments', function (Blueprint $table) {
+                $table->id();
+                $table->foreignId('user_id')->constrained()->cascadeOnDelete();
+                $table->foreignId('fund_id')->constrained()->cascadeOnDelete();
+                $table->integer('shares')->default(0);
+                $table->decimal('amount', 15, 2);
+                $table->decimal('price_per_share', 10, 2);
+                $table->date('purchase_date');
+                $table->enum('status', ['active', 'redeemed'])->default('active')->index();
+                $table->timestamps();
 
-            $table->index(['user_id', 'fund_id']);
-        });
+                $table->index(['user_id', 'fund_id']);
+            });
+        }
     }
 
     /**

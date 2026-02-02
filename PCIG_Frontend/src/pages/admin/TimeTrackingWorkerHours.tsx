@@ -45,20 +45,134 @@ export default function TimeTrackingWorkerHours() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // New states for functionality
+  const [isLogHoursModalOpen, setIsLogHoursModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeFilters, setActiveFilters] = useState({
+    project: 'All',
+    worker: 'All',
+    status: 'All'
+  });
+  
+  // Data for modal dropdowns
+  const [modalData, setModalData] = useState<{users: any[], properties: any[]}>({ users: [], properties: [] });
+
+  const [newEntry, setNewEntry] = useState({
+    user_id: '',
+    property_id: '',
+    date: new Date().toISOString().split('T')[0],
+    hours: '',
+    description: ''
+  });
+
+  const fetchData = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (searchQuery) params.append('search', searchQuery);
+      if (activeFilters.project !== 'All') params.append('project', activeFilters.project);
+      if (activeFilters.worker !== 'All') params.append('worker', activeFilters.worker);
+      if (activeFilters.status !== 'All') params.append('status', activeFilters.status);
+
+      const response = await api.get(`/admin/time-tracking/dashboard-data?${params.toString()}`);
+      setAdminData(response.data);
+      setLoading(false);
+    } catch (err) {
+      console.error('Error fetching time tracking data:', err);
+      setError('Failed to load data');
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const response = await api.get('/admin/time-tracking/dashboard-data');
-        setAdminData(response.data);
-        setLoading(false);
-      } catch (err) {
-        console.error('Error fetching time tracking data:', err);
-        setError('Failed to load data');
-        setLoading(false);
-      }
-    };
     fetchData();
-  }, []);
+  }, [activeFilters]); // Refetch when filters change
+
+  const handleSearch = (e: React.FormEvent) => {
+    e.preventDefault();
+    fetchData();
+  };
+
+  // Fetch users and properties for the modal when it opens
+  useEffect(() => {
+    if (isLogHoursModalOpen) {
+        const fetchModalData = async () => {
+            try {
+                const [propsRes, usersRes] = await Promise.all([
+                    api.get('/admin/properties/dropdown'),
+                    api.get('/admin/time-tracking/users-dropdown') 
+                ]);
+                setModalData({
+                    properties: propsRes.data,
+                    users: usersRes.data
+                });
+            } catch (e) {
+                console.error("Error fetching modal data", e);
+            }
+        };
+        fetchModalData();
+    }
+  }, [isLogHoursModalOpen]);
+
+  const handleCreateEntry = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+        await api.post('/admin/time-tracking/entries', newEntry);
+        setIsLogHoursModalOpen(false);
+        setNewEntry({
+            user_id: '',
+            property_id: '',
+            date: new Date().toISOString().split('T')[0],
+            hours: '',
+            description: ''
+        });
+        fetchData();
+    } catch (error) {
+        console.error('Error creating entry:', error);
+        alert('Failed to create entry');
+    } finally {
+        setIsSubmitting(false);
+    }
+  };
+
+  const handleApprove = async (id: string) => {
+      try {
+          await api.post(`/admin/time-tracking/entries/${id}/approve`);
+          fetchData(); // Refresh data
+          if (selectedEntryId === id) setSelectedEntryId(''); // Deselect
+      } catch (error) {
+          console.error('Error approving entry:', error);
+          alert('Failed to approve entry');
+      }
+  };
+
+  const handleReject = async (id: string) => {
+      try {
+          await api.post(`/admin/time-tracking/entries/${id}/reject`);
+          fetchData();
+          if (selectedEntryId === id) setSelectedEntryId('');
+      } catch (error) {
+          console.error('Error rejecting entry:', error);
+          alert('Failed to reject entry');
+      }
+  };
+
+  const handleExport = async () => {
+      try {
+          const response = await api.get('/admin/time-tracking/export', { responseType: 'blob' });
+          const url = window.URL.createObjectURL(new Blob([response.data]));
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', `time-tracking-${new Date().toISOString().split('T')[0]}.csv`);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+      } catch (error) {
+          console.error('Error exporting report:', error);
+          alert('Failed to export report');
+      }
+  };
 
   // Extract data from API response
   const timeData = (adminData as any)?.timeTrackingWorkerHours || {};
@@ -137,6 +251,11 @@ export default function TimeTrackingWorkerHours() {
         setActiveTab(tabs.find((t: any) => t.active)?.id || 'all');
     }
   }, [adminData]); // Re-run when adminData changes
+
+  useEffect(() => {
+    const tabMap: {[key: string]: string} = { 'All': 'all', 'Pending': 'pending', 'Approved': 'approved', 'Rejected': 'rejected' };
+    setActiveTab(tabMap[activeFilters.status] || 'all');
+  }, [activeFilters.status]);
 
   const handleCheckboxChange = (entryId: string) => {
     setSelectedEntries((prev) => {
@@ -281,6 +400,7 @@ export default function TimeTrackingWorkerHours() {
                 </div>
                 <div style={{ display: 'flex', gap: isMobile ? 8 : 12, flexDirection: isMobile ? 'column' : 'row', width: isMobile ? '100%' : 'auto' }}>
                   <button
+                    onClick={handleExport}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -302,6 +422,7 @@ export default function TimeTrackingWorkerHours() {
                     <span style={{ whiteSpace: 'nowrap' }}>{header.actionButtons.export.label}</span>
                   </button>
                   <button
+                    onClick={() => setIsLogHoursModalOpen(true)}
                     style={{
                       display: 'inline-flex',
                       alignItems: 'center',
@@ -425,7 +546,10 @@ export default function TimeTrackingWorkerHours() {
               {tabs.map((tab: any) => (
                 <button
                   key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => {
+                    const statusMap: {[key: string]: string} = { 'all': 'All', 'pending': 'Pending', 'approved': 'Approved', 'rejected': 'Rejected' };
+                    setActiveFilters(prev => ({ ...prev, status: statusMap[tab.id] || 'All' }));
+                  }}
                   style={{
                     padding: isMobile ? '0 0 12px' : '0 0 16px',
                     border: 'none',
@@ -452,7 +576,7 @@ export default function TimeTrackingWorkerHours() {
                 marginBottom: isMobile ? 16 : 24
               }}
             >
-              <div style={{ position: 'relative', flex: 1 }}>
+              <form onSubmit={handleSearch} style={{ position: 'relative', flex: 1 }}>
                 <Search
                   style={{
                     position: 'absolute',
@@ -467,6 +591,8 @@ export default function TimeTrackingWorkerHours() {
                 <input
                   type="text"
                   placeholder={searchAndFilters.searchPlaceholder}
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
                   style={{
                     width: '100%',
                     padding: '10px 12px 10px 36px',
@@ -477,29 +603,32 @@ export default function TimeTrackingWorkerHours() {
                     boxSizing: 'border-box'
                   }}
                 />
-              </div>
+              </form>
               <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: isMobile ? 4 : 0 }}>
                 {searchAndFilters.filters.map((filter: any, idx: number) => (
-                  <button
-                    key={idx}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 8,
-                      padding: '8px 12px',
-                      borderRadius: 8,
-                      border: '1px solid #E2E8F0',
-                      backgroundColor: '#FFFFFF',
-                      color: '#64748B',
-                      fontSize: 13,
-                      fontWeight: 500,
-                      whiteSpace: 'nowrap',
-                      cursor: 'pointer'
-                    }}
-                  >
-                    <Filter style={{ width: 14, height: 14 }} />
-                    {filter.label}
-                  </button>
+                  <div key={idx} style={{ position: 'relative' }}>
+                    <select
+                        value={activeFilters[filter.label.toLowerCase() as keyof typeof activeFilters] || 'All'}
+                        onChange={(e) => setActiveFilters(prev => ({ ...prev, [filter.label.toLowerCase()]: e.target.value }))}
+                        style={{
+                            appearance: 'none',
+                            padding: '8px 32px 8px 12px',
+                            borderRadius: 8,
+                            border: '1px solid #E2E8F0',
+                            backgroundColor: '#FFFFFF',
+                            color: '#64748B',
+                            fontSize: 13,
+                            fontWeight: 500,
+                            cursor: 'pointer',
+                            minWidth: 120
+                        }}
+                    >
+                        {filter.options.map((opt: string, i: number) => (
+                            <option key={i} value={opt}>{opt}</option>
+                        ))}
+                    </select>
+                    <Filter style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', width: 14, height: 14, pointerEvents: 'none', color: '#64748B' }} />
+                  </div>
                 ))}
               </div>
             </div>
@@ -616,9 +745,107 @@ export default function TimeTrackingWorkerHours() {
                 </table>
               </div>
             </div>
+            {/* Modals */}
+            {isLogHoursModalOpen && (
+              <div style={{
+                position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 1000,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                padding: 16
+              }}>
+                <div style={{
+                  backgroundColor: 'white', borderRadius: 12, padding: 24,
+                  width: '100%', maxWidth: 500, maxHeight: '90vh', overflowY: 'auto'
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 20 }}>
+                    <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600 }}>Log Hours</h2>
+                    <button onClick={() => setIsLogHoursModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                      <X size={20} color="#64748B" />
+                    </button>
+                  </div>
+                  <form onSubmit={handleCreateEntry} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Date</label>
+                      <input
+                        type="date"
+                        required
+                        value={newEntry.date}
+                        onChange={e => setNewEntry({...newEntry, date: e.target.value})}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 14 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Worker</label>
+                      <select
+                        required
+                        value={newEntry.user_id}
+                        onChange={e => setNewEntry({...newEntry, user_id: e.target.value})}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 14 }}
+                      >
+                        <option value="">Select Worker</option>
+                        {modalData.users.map((u: any) => (
+                          <option key={u.id} value={u.id}>{u.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Project</label>
+                      <select
+                        required
+                        value={newEntry.property_id}
+                        onChange={e => setNewEntry({...newEntry, property_id: e.target.value})}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 14 }}
+                      >
+                        <option value="">Select Project</option>
+                        {modalData.properties.map((p: any) => (
+                          <option key={p.id} value={p.id}>{p.address}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Hours</label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0.1"
+                        required
+                        value={newEntry.hours}
+                        onChange={e => setNewEntry({...newEntry, hours: e.target.value})}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 14 }}
+                      />
+                    </div>
+                    <div>
+                      <label style={{ display: 'block', fontSize: 14, fontWeight: 500, color: '#334155', marginBottom: 6 }}>Description</label>
+                      <textarea
+                        required
+                        value={newEntry.description}
+                        onChange={e => setNewEntry({...newEntry, description: e.target.value})}
+                        style={{ width: '100%', padding: '10px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 14, minHeight: 80 }}
+                      />
+                    </div>
+                    <button
+                      type="submit"
+                      disabled={isSubmitting}
+                      style={{
+                        padding: '12px',
+                        backgroundColor: '#2563EB',
+                        color: 'white',
+                        border: 'none',
+                        borderRadius: 8,
+                        fontSize: 14,
+                        fontWeight: 600,
+                        cursor: isSubmitting ? 'not-allowed' : 'pointer',
+                        opacity: isSubmitting ? 0.7 : 1,
+                        marginTop: 8
+                      }}
+                    >
+                      {isSubmitting ? 'Saving...' : 'Log Hours'}
+                    </button>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
-
-          {/* Right Panel - Detail View */}
           {selectedEntryId && (
             <div
                style={{
@@ -737,6 +964,7 @@ export default function TimeTrackingWorkerHours() {
                       {/* Actions */}
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 'auto' }}>
                         <button
+                          onClick={() => handleReject(selectedEntry.id)}
                           style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -756,6 +984,7 @@ export default function TimeTrackingWorkerHours() {
                           {detailPanel.actions.reject.label}
                         </button>
                         <button
+                          onClick={() => handleApprove(selectedEntry.id)}
                           style={{
                             display: 'flex',
                             alignItems: 'center',

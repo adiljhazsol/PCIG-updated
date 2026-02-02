@@ -28,6 +28,7 @@ class InvestorProfile extends Model
         'source_of_funds',
         'routing_number',
         'is_accredited',
+        'privacy_settings',
     ];
 
     protected $casts = [
@@ -35,6 +36,7 @@ class InvestorProfile extends Model
         'bank_account_encrypted' => 'encrypted',
         'dob' => 'date',
         'is_accredited' => 'boolean',
+        'privacy_settings' => 'array',
     ];
 
     public function user()

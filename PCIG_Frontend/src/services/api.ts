@@ -17,7 +17,21 @@ api.interceptors.request.use(
     const token = localStorage.getItem('token');
     
     if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
+      // Handle both plain objects and AxiosHeaders
+      if (config.headers && typeof config.headers.set === 'function') {
+        config.headers.set('Authorization', `Bearer ${token}`);
+      } else {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    
+    // If request data is FormData, let the browser set the Content-Type header
+    if (config.data instanceof FormData) {
+      if (config.headers && typeof config.headers.delete === 'function') {
+        config.headers.delete('Content-Type');
+      } else {
+        delete config.headers['Content-Type'];
+      }
     }
     
     return config;

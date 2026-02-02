@@ -11,7 +11,12 @@ import {
   Image as ImageIcon,
   Eye,
   Loader2,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  Calendar,
+  DollarSign,
+  User
 } from 'lucide-react';
 import AdminNav from '../../components/admin/AdminNav';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
@@ -118,6 +123,7 @@ interface REOProperty {
   daysOnMarket: number;
   strategy?: string;
   listPrice?: string;
+  currentOffer?: string;
   listing_agent?: string;
   listing_date?: string;
   acquisition_date?: string;
@@ -133,6 +139,12 @@ interface REOData {
   filters: REOFilters;
   tableHeaders: string[];
   properties: REOProperty[];
+  pagination?: {
+    current_page: number;
+    last_page: number;
+    per_page: number;
+    total: number;
+  };
 }
 
 export default function REODisposition() {
@@ -143,18 +155,50 @@ export default function REODisposition() {
   const [data, setData] = useState<REOData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [selectedTab, setSelectedTab] = useState<'for-sale' | 'for-lease' | 'all'>('for-sale');
+  const [selectedTab, setSelectedTab] = useState<'for-sale' | 'for-lease' | 'all'>('all');
   const [selectedProperty, setSelectedProperty] = useState<REOProperty | null>(null);
+
+  // Filter State
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [typeFilter, setTypeFilter] = useState('All');
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+  const [moreFilters, setMoreFilters] = useState({
+      city: '',
+      minPrice: '',
+      maxPrice: ''
+  });
+
+  // Modal State
+  const [showListModal, setShowListModal] = useState(false);
+  const [allProperties, setAllProperties] = useState<any[]>([]);
+  const [listingForm, setListingForm] = useState({
+      id: '',
+      listed_price: '',
+      listing_agent: '',
+      listing_date: new Date().toISOString().split('T')[0],
+      disposition_strategy: 'sale'
+  });
+  const [listingLoading, setListingLoading] = useState(false);
   
-  useEffect(() => {
-    const fetchData = async () => {
+  const fetchData = async () => {
+      setLoading(true);
       try {
-        const response = await api.get('/admin/reo/dashboard-data');
+        const params = {
+            tab: selectedTab,
+            search: searchTerm,
+            status: statusFilter,
+            type: typeFilter,
+            city: moreFilters.city,
+            min_price: moreFilters.minPrice,
+            max_price: moreFilters.maxPrice
+        };
+        const response = await api.get('/admin/reo/dashboard-data', { params });
         if (response.data && response.data.reoDisposition) {
           setData(response.data.reoDisposition);
-          // Auto-select first property if available
-          if (response.data.reoDisposition.properties && response.data.reoDisposition.properties.length > 0) {
-              setSelectedProperty(response.data.reoDisposition.properties[0]);
+          // Auto-select first property if available and none selected
+          if (!selectedProperty && response.data.reoDisposition.properties && response.data.reoDisposition.properties.length > 0) {
+              // setSelectedProperty(response.data.reoDisposition.properties[0]);
           }
         } else {
           setError('Failed to load REO disposition data');
@@ -167,10 +211,81 @@ export default function REODisposition() {
       }
     };
 
-    fetchData();
-  }, []);
+  useEffect(() => {
+    const timeoutId = setTimeout(() => {
+        fetchData();
+    }, 500); // Debounce search
+    return () => clearTimeout(timeoutId);
+  }, [selectedTab, statusFilter, typeFilter, searchTerm, moreFilters]);
 
-  if (loading) {
+  useEffect(() => {
+      if (showListModal) {
+          const fetchAllProperties = async () => {
+              try {
+                  const response = await api.get('/admin/reo/all-properties');
+                  setAllProperties(response.data);
+              } catch (err) {
+                  console.error('Failed to fetch all properties:', err);
+              }
+          };
+          fetchAllProperties();
+      }
+  }, [showListModal]);
+
+  const handleExport = async () => {
+      try {
+          const params = {
+            tab: selectedTab,
+            status: statusFilter,
+            type: typeFilter,
+            city: moreFilters.city,
+            min_price: moreFilters.minPrice,
+            max_price: moreFilters.maxPrice
+        };
+          const response = await api.get('/admin/reo/export', { 
+              params,
+              responseType: 'blob' 
+          });
+          const url = window.URL.createObjectURL(new Blob([response.data]));
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', `reo-disposition-${new Date().toISOString().split('T')[0]}.csv`);
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+      } catch (err) {
+          console.error('Export failed:', err);
+          alert('Failed to export report');
+      }
+  };
+
+  const handleListProperty = async () => {
+      if (!listingForm.id || !listingForm.listed_price || !listingForm.listing_date) {
+          alert('Please fill in all required fields');
+          return;
+      }
+      setListingLoading(true);
+      try {
+          await api.post('/admin/reo/list-property', listingForm);
+          setShowListModal(false);
+          setListingForm({
+            id: '',
+            listed_price: '',
+            listing_agent: '',
+            listing_date: new Date().toISOString().split('T')[0],
+            disposition_strategy: 'sale'
+        });
+          fetchData();
+          alert('Property listed successfully');
+      } catch (err) {
+          console.error('Listing failed:', err);
+          alert('Failed to list property');
+      } finally {
+          setListingLoading(false);
+      }
+  };
+
+  if (loading && !data) {
     return (
       <div style={{
         fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
@@ -483,102 +598,156 @@ export default function REODisposition() {
             </div>
 
             {/* Search and Filter Bar */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: isMobile ? 8 : 12,
-                flexWrap: isMobile ? 'wrap' : 'nowrap'
-              }}
-            >
-              <div
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div
                 style={{
-                  flexGrow: 1,
-                  flexShrink: 1,
-                  flexBasis: 0,
-                  position: 'relative'
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: isMobile ? 8 : 12,
+                    flexWrap: isMobile ? 'wrap' : 'nowrap'
                 }}
-              >
-                <Search
-                  style={{
-                    position: 'absolute',
-                    left: 12,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    width: 16,
-                    height: 16,
-                    color: '#64748B'
-                  }}
-                />
-                <input
-                  type="text"
-                  placeholder={isMobile ? searchPlaceholder.mobile : searchPlaceholder.desktop}
-                  style={{
-                    width: '100%',
-                    padding: isMobile ? '8px 10px 8px 32px' : '8px 12px 8px 36px',
-                    fontSize: isMobile ? 'clamp(12px, 3vw, 13px)' : '13px',
+                >
+                <div
+                    style={{
+                    flexGrow: 1,
+                    flexShrink: 1,
+                    flexBasis: 0,
+                    position: 'relative'
+                    }}
+                >
+                    <Search
+                    style={{
+                        position: 'absolute',
+                        left: 12,
+                        top: '50%',
+                        transform: 'translateY(-50%)',
+                        width: 16,
+                        height: 16,
+                        color: '#64748B'
+                    }}
+                    />
+                    <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder={isMobile ? searchPlaceholder.mobile : searchPlaceholder.desktop}
+                    style={{
+                        width: '100%',
+                        padding: isMobile ? '8px 10px 8px 32px' : '8px 12px 8px 36px',
+                        fontSize: isMobile ? 'clamp(12px, 3vw, 13px)' : '13px',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: 8,
+                        backgroundColor: '#FFFFFF',
+                        color: '#0F172A',
+                        minWidth: 0
+                    }}
+                    />
+                </div>
+                <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    style={{
+                    padding: isMobile ? '8px 10px' : '8px 12px',
+                    fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
                     border: '1px solid #E2E8F0',
                     borderRadius: 8,
                     backgroundColor: '#FFFFFF',
                     color: '#0F172A',
-                    minWidth: 0
-                  }}
-                />
-              </div>
-              <select
-                style={{
-                  padding: isMobile ? '8px 10px' : '8px 12px',
-                  fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: 8,
-                  backgroundColor: '#FFFFFF',
-                  color: '#0F172A',
-                  cursor: 'pointer',
-                  width: isMobile ? 'calc(50% - 4px)' : 'auto',
-                  minWidth: isMobile ? 0 : 120
-                }}
-              >
-                {(filters.status.options || []).map((option: string) => (
-                  <option key={option}>{option === 'All' ? filters.status.label : option}</option>
-                ))}
-              </select>
-              <select
-                style={{
-                  padding: isMobile ? '8px 10px' : '8px 12px',
-                  fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: 8,
-                  backgroundColor: '#FFFFFF',
-                  color: '#0F172A',
-                  cursor: 'pointer',
-                  width: isMobile ? 'calc(50% - 4px)' : 'auto',
-                  minWidth: isMobile ? 0 : 120
-                }}
-              >
-                {(filters.type.options || []).map((option: string) => (
-                  <option key={option}>{option === 'All' ? filters.type.label : option}</option>
-                ))}
-              </select>
-              <button
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: isMobile ? '8px 10px' : '8px 12px',
-                  fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
-                  border: '1px solid #E2E8F0',
-                  borderRadius: 8,
-                  backgroundColor: '#FFFFFF',
-                  color: '#0F172A',
-                  cursor: 'pointer',
-                  width: isMobile ? '100%' : 'auto',
-                  justifyContent: isMobile ? 'center' : 'flex-start',
-                  whiteSpace: 'nowrap'
-                }}
-              >
-                <Filter style={{ width: 14, height: 14, flexShrink: 0 }} />
-                <span>{filters.moreFilters}</span>
-              </button>
+                    cursor: 'pointer',
+                    width: isMobile ? 'calc(50% - 4px)' : 'auto',
+                    minWidth: isMobile ? 0 : 120
+                    }}
+                >
+                    {(filters.status.options || []).map((option: string) => (
+                    <option key={option} value={option}>{option === 'All' ? filters.status.label : option}</option>
+                    ))}
+                </select>
+                <select
+                    value={typeFilter}
+                    onChange={(e) => setTypeFilter(e.target.value)}
+                    style={{
+                    padding: isMobile ? '8px 10px' : '8px 12px',
+                    fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: 8,
+                    backgroundColor: '#FFFFFF',
+                    color: '#0F172A',
+                    cursor: 'pointer',
+                    width: isMobile ? 'calc(50% - 4px)' : 'auto',
+                    minWidth: isMobile ? 0 : 120
+                    }}
+                >
+                    {(filters.type.options || []).map((option: string) => (
+                    <option key={option} value={option}>{option === 'All' ? filters.type.label : option}</option>
+                    ))}
+                </select>
+                <button
+                    onClick={() => setShowMoreFilters(!showMoreFilters)}
+                    style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    padding: isMobile ? '8px 10px' : '8px 12px',
+                    fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
+                    border: '1px solid #E2E8F0',
+                    borderRadius: 8,
+                    backgroundColor: showMoreFilters ? '#EFF6FF' : '#FFFFFF',
+                    color: showMoreFilters ? '#1E3A5F' : '#0F172A',
+                    cursor: 'pointer',
+                    width: isMobile ? '100%' : 'auto',
+                    justifyContent: isMobile ? 'center' : 'flex-start',
+                    whiteSpace: 'nowrap'
+                    }}
+                >
+                    <Filter style={{ width: 14, height: 14, flexShrink: 0 }} />
+                    <span>{filters.moreFilters}</span>
+                    {showMoreFilters ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                </button>
+                </div>
+                
+                {/* More Filters Panel */}
+                {showMoreFilters && (
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                        gap: 12,
+                        padding: 16,
+                        backgroundColor: '#FFFFFF',
+                        border: '1px solid #E2E8F0',
+                        borderRadius: 8
+                    }}>
+                        <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#64748B', marginBottom: 4 }}>City</label>
+                            <input 
+                                type="text" 
+                                placeholder="Filter by City"
+                                value={moreFilters.city}
+                                onChange={(e) => setMoreFilters({...moreFilters, city: e.target.value})}
+                                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 13 }}
+                            />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#64748B', marginBottom: 4 }}>Min Price</label>
+                            <input 
+                                type="number" 
+                                placeholder="Min Price"
+                                value={moreFilters.minPrice}
+                                onChange={(e) => setMoreFilters({...moreFilters, minPrice: e.target.value})}
+                                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 13 }}
+                            />
+                        </div>
+                        <div>
+                            <label style={{ display: 'block', fontSize: 12, fontWeight: 500, color: '#64748B', marginBottom: 4 }}>Max Price</label>
+                            <input 
+                                type="number" 
+                                placeholder="Max Price"
+                                value={moreFilters.maxPrice}
+                                onChange={(e) => setMoreFilters({...moreFilters, maxPrice: e.target.value})}
+                                style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 13 }}
+                            />
+                        </div>
+                    </div>
+                )}
             </div>
 
             {/* Action Buttons */}
@@ -591,45 +760,45 @@ export default function REODisposition() {
               }}
             >
               <button
+                onClick={handleExport}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
                   padding: isMobile ? '10px 14px' : '8px 14px',
                   borderRadius: 8,
-                  border: '1px solid #CBD5E1',
                   backgroundColor: '#FFFFFF',
+                  border: '1px solid #E2E8F0',
                   color: '#0F172A',
-                  fontSize: isMobile ? 'clamp(12px, 3vw, 13px)' : '13px',
+                  fontSize: isMobile ? '13px' : '13px',
                   fontWeight: 500,
                   cursor: 'pointer',
-                  width: isMobile ? '100%' : 'auto',
                   justifyContent: 'center'
                 }}
               >
-                {React.createElement(iconMap[actionButtons.export.icon], { style: { width: 16, height: 16, flexShrink: 0 } })}
-                {actionButtons.export.label}
+                <Download style={{ width: 14, height: 14 }} />
+                <span>{actionButtons.export.label}</span>
               </button>
               <button
+                onClick={() => setShowListModal(true)}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 6,
-                  padding: isMobile ? '10px 16px' : '8px 16px',
+                  padding: isMobile ? '10px 14px' : '8px 14px',
                   borderRadius: 8,
-                  border: 'none',
                   backgroundColor: '#1E3A5F',
+                  border: 'none',
                   color: '#FFFFFF',
-                  fontSize: isMobile ? 'clamp(12px, 3vw, 13px)' : '13px',
+                  fontSize: isMobile ? '13px' : '13px',
                   fontWeight: 500,
                   cursor: 'pointer',
-                  boxShadow: '0 1px 2px rgba(15, 23, 42, 0.15)',
-                  width: isMobile ? '100%' : 'auto',
-                  justifyContent: 'center'
+                  justifyContent: 'center',
+                  boxShadow: '0 1px 2px rgba(0, 0, 0, 0.05)'
                 }}
               >
-                {React.createElement(iconMap[actionButtons.createListing.icon], { style: { width: 16, height: 16, flexShrink: 0 } })}
-                {actionButtons.createListing.label}
+                <Plus style={{ width: 14, height: 14 }} />
+                <span>{actionButtons.createListing.label}</span>
               </button>
             </div>
 
@@ -697,19 +866,6 @@ export default function REODisposition() {
                         <div
                           style={{
                             fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
-                            fontWeight: 600,
-                            color: '#0F172A',
-                            marginBottom: 2,
-                            wordBreak: 'break-word'
-                          }}
-                        >
-                          {property.id}
-                        </div>
-                      </td>
-                      <td style={{ padding: isMobile ? '12px' : '16px' }}>
-                        <div
-                          style={{
-                            fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
                             fontWeight: 500,
                             color: '#0F172A',
                             marginBottom: 2,
@@ -724,18 +880,7 @@ export default function REODisposition() {
                             color: '#64748B'
                           }}
                         >
-                          {property.city}
-                        </div>
-                      </td>
-                      <td style={{ padding: isMobile ? '12px' : '16px' }}>
-                        <div
-                          style={{
-                            fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
-                            color: '#0F172A',
-                            wordBreak: 'break-word'
-                          }}
-                        >
-                          {property.type}
+                          {property.city} • {property.id}
                         </div>
                       </td>
                       <td style={{ padding: isMobile ? '12px' : '16px' }}>
@@ -758,12 +903,35 @@ export default function REODisposition() {
                         <div
                           style={{
                             fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
+                            color: '#0F172A',
+                            wordBreak: 'break-word'
+                          }}
+                        >
+                          {property.type}
+                        </div>
+                      </td>
+                      <td style={{ padding: isMobile ? '12px' : '16px' }}>
+                        <div
+                          style={{
+                            fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
                             fontWeight: 600,
                             color: '#0F172A',
                             whiteSpace: 'nowrap'
                           }}
                         >
                           {property.price}
+                        </div>
+                      </td>
+                      <td style={{ padding: isMobile ? '12px' : '16px' }}>
+                        <div
+                          style={{
+                            fontSize: isMobile ? 'clamp(11px, 2.5vw, 13px)' : '13px',
+                            fontWeight: 600,
+                            color: '#0F172A',
+                            whiteSpace: 'nowrap'
+                          }}
+                        >
+                          {property.currentOffer || '$0'}
                         </div>
                       </td>
                       <td style={{ padding: isMobile ? '12px' : '16px' }}>
@@ -1236,6 +1404,134 @@ export default function REODisposition() {
           )}
         </div>
       </div>
+
+      {/* List Property Modal */}
+      {showListModal && (
+          <div style={{
+              position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: 'rgba(0,0,0,0.5)', zIndex: 100,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 20
+          }}>
+              <div style={{
+                  backgroundColor: '#fff', borderRadius: 12, padding: 24,
+                  width: '100%', maxWidth: 500, boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)'
+              }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+                      <h3 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: '#0F172A' }}>List Property</h3>
+                      <button onClick={() => setShowListModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer' }}>
+                          <X size={20} color="#64748B" />
+                      </button>
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                      <div>
+                          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>Select Property</label>
+                          <select
+                              value={listingForm.id}
+                              onChange={(e) => setListingForm({...listingForm, id: e.target.value})}
+                              style={{ width: '100%', padding: '10px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14 }}
+                          >
+                              <option value="">Select a property...</option>
+                              {/* Use properties from data or fallback to empty array */}
+                              {allProperties.map((p: any) => (
+                                  <option key={p.id} value={p.id}>{p.address}</option>
+                              ))}
+                          </select>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                          <div>
+                              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>List Price</label>
+                              <div style={{ position: 'relative' }}>
+                                  <DollarSign size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#64748B' }} />
+                                  <input 
+                                      type="number" 
+                                      value={listingForm.listed_price}
+                                      onChange={(e) => setListingForm({...listingForm, listed_price: e.target.value})}
+                                      style={{ width: '100%', padding: '10px 10px 10px 30px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14 }}
+                                      placeholder="0.00"
+                                  />
+                              </div>
+                          </div>
+                          <div>
+                              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>Listing Date</label>
+                              <div style={{ position: 'relative' }}>
+                                  <Calendar size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#64748B' }} />
+                                  <input 
+                                      type="date" 
+                                      value={listingForm.listing_date}
+                                      onChange={(e) => setListingForm({...listingForm, listing_date: e.target.value})}
+                                      style={{ width: '100%', padding: '10px 10px 10px 30px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14 }}
+                                  />
+                              </div>
+                          </div>
+                      </div>
+
+                      <div>
+                          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>Listing Agent</label>
+                          <div style={{ position: 'relative' }}>
+                              <User size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#64748B' }} />
+                              <input 
+                                  type="text" 
+                                  value={listingForm.listing_agent}
+                                  onChange={(e) => setListingForm({...listingForm, listing_agent: e.target.value})}
+                                  placeholder="Agent Name"
+                                  style={{ width: '100%', padding: '10px 10px 10px 30px', borderRadius: 8, border: '1px solid #E2E8F0', fontSize: 14 }}
+                              />
+                          </div>
+                      </div>
+                      
+                      <div>
+                          <label style={{ display: 'block', fontSize: 13, fontWeight: 500, color: '#475569', marginBottom: 4 }}>Strategy</label>
+                          <div style={{ display: 'flex', gap: 12 }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer' }}>
+                                  <input 
+                                      type="radio" 
+                                      name="strategy" 
+                                      value="sale" 
+                                      checked={listingForm.disposition_strategy === 'sale'} 
+                                      onChange={(e) => setListingForm({...listingForm, disposition_strategy: e.target.value})}
+                                  /> Sale
+                              </label>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer' }}>
+                                  <input 
+                                      type="radio" 
+                                      name="strategy" 
+                                      value="lease" 
+                                      checked={listingForm.disposition_strategy === 'lease'} 
+                                      onChange={(e) => setListingForm({...listingForm, disposition_strategy: e.target.value})}
+                                  /> Lease
+                              </label>
+                          </div>
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 8 }}>
+                          <button 
+                              onClick={() => setShowListModal(false)}
+                              style={{
+                                  padding: '10px 16px', borderRadius: 8, border: '1px solid #E2E8F0', backgroundColor: '#fff',
+                                  color: '#64748B', fontSize: 14, fontWeight: 500, cursor: 'pointer'
+                              }}
+                          >
+                              Cancel
+                          </button>
+                          <button 
+                              onClick={handleListProperty}
+                              disabled={listingLoading}
+                              style={{
+                                  padding: '10px 16px', borderRadius: 8, border: 'none', backgroundColor: '#1E3A5F',
+                                  color: '#fff', fontSize: 14, fontWeight: 500, cursor: listingLoading ? 'not-allowed' : 'pointer',
+                                  opacity: listingLoading ? 0.7 : 1
+                              }}
+                          >
+                              {listingLoading ? 'Listing...' : 'Confirm Listing'}
+                          </button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
     </div>
   );
 }

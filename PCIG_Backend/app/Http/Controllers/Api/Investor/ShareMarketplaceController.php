@@ -10,6 +10,7 @@ use App\Models\Transaction;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 class ShareMarketplaceController extends Controller
 {
@@ -140,7 +141,7 @@ class ShareMarketplaceController extends Controller
     public function buy(Request $request, $id): JsonResponse
     {
         $buyer = $request->user();
-        $listing = ShareListing::where('status', 'active')->findOrFail($id);
+        $listing = ShareListing::with('property')->where('status', 'active')->findOrFail($id);
 
         if ($listing->seller_id === $buyer->id) {
             return response()->json([
@@ -199,8 +200,13 @@ class ShareMarketplaceController extends Controller
                     'status' => 'active',
                 ],
                 [
+                    'investment_id' => 'INV-' . Str::random(8),
+                    'name' => $listing->property->address ?? 'Investment Property',
+                    'type' => 'Equity',
+                    'details' => 'Marketplace Purchase',
                     'shares' => 0,
                     'amount' => 0,
+                    'current_value' => 0,
                     'price_per_share' => $listing->price_per_share,
                     'purchase_date' => now(),
                 ]
@@ -208,6 +214,7 @@ class ShareMarketplaceController extends Controller
 
             $buyerInvestment->shares += $sharesToBuy;
             $buyerInvestment->amount += $totalPrice;
+            $buyerInvestment->current_value += $totalPrice;
             // Update weighted average price per share
             if ($buyerInvestment->shares > 0) {
                  $buyerInvestment->price_per_share = $buyerInvestment->amount / $buyerInvestment->shares;
@@ -227,6 +234,7 @@ class ShareMarketplaceController extends Controller
             Transaction::create([
                 'user_id' => $buyer->id,
                 'type' => 'purchase',
+                'date' => now(),
                 'amount' => $totalPrice,
                 'property_id' => $listing->property_id,
                 'description' => "Purchased {$sharesToBuy} shares from marketplace",
@@ -237,6 +245,7 @@ class ShareMarketplaceController extends Controller
             Transaction::create([
                 'user_id' => $listing->seller_id,
                 'type' => 'sale',
+                'date' => now(),
                 'amount' => $totalPrice,
                 'property_id' => $listing->property_id,
                 'description' => "Sold {$sharesToBuy} shares via marketplace",

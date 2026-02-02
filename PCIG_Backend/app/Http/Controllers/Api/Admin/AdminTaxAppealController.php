@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\TaxAppeal;
 use App\Models\Property;
+use App\Models\PropertyDocument;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Storage;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Carbon\Carbon;
 
 class AdminTaxAppealController extends Controller
@@ -99,19 +102,28 @@ class AdminTaxAppealController extends Controller
         $appeals = $query->limit(50) // Increased limit for filtered results
             ->get()
             ->map(function ($appeal) {
+                $statusColor = $this->getStatusColor($appeal->status);
+                $savings = (float)($appeal->savings ?? 0);
+                
                 return [
                     'id' => $appeal->property_id, // Using property ID as ID for frontend compatibility
                     'appealId' => $appeal->id,
                     'pcigId' => 'PROP-' . $appeal->property_id,
                     'address' => $appeal->property ? $appeal->property->address : 'Unknown',
+                    'city' => $appeal->property ? $appeal->property->city : 'Unknown',
                     'county' => $appeal->property ? $appeal->property->county : 'Unknown',
-                    'currentValue' => (float)$appeal->current_assessment,
-                    'proposedValue' => (float)$appeal->proposed_assessment,
-                    'appealStatus' => ucfirst(str_replace('_', ' ', $appeal->status)),
-                    'statusColor' => $this->getStatusColor($appeal->status),
-                    'hearingDate' => $appeal->hearing_date ? Carbon::parse($appeal->hearing_date)->format('M d, Y') : 'Not Scheduled',
-                    'filingDate' => $appeal->filed_date ? Carbon::parse($appeal->filed_date)->format('M d, Y') : '',
-                    'savings' => (float)($appeal->savings ?? 0),
+                    'parcelId' => $appeal->property ? $appeal->property->parcel_id : 'Unknown',
+                    'type' => 'Tax Appeal',
+                    'typeBg' => '#E0F2FE', // light blue
+                    'typeColor' => '#0369A1', // dark blue
+                    'status' => ucfirst(str_replace('_', ' ', $appeal->status)),
+                    'statusBg' => $this->getStatusBgColor($appeal->status),
+                    'statusColor' => $this->getStatusTextColor($appeal->status),
+                    'currentValue' => '$' . number_format((float)$appeal->current_assessment, 2),
+                    'appealValue' => '$' . number_format((float)$appeal->proposed_assessment, 2),
+                    'potentialReduction' => '$' . number_format($savings, 2),
+                    'potentialReductionColor' => $savings > 0 ? '#166534' : '#64748B',
+                    'deadline' => $appeal->hearing_date ? Carbon::parse($appeal->hearing_date)->format('M d, Y') : 'Not Scheduled',
                     'selected' => false
                 ];
             });
@@ -144,7 +156,7 @@ class AdminTaxAppealController extends Controller
                     ]
                 ],
                 'propertiesTable' => [
-                    'headers' => ['Property Address', 'County', 'Current Value', 'Proposed Value', 'Status', 'Hearing Date', 'Est. Savings', 'Actions'],
+                    'headers' => ['Select', 'Property Address', 'Parcel ID', 'Type', 'Status', 'Current Value', 'Proposed Value', 'Est. Savings', 'Hearing Date'],
                     'rows' => $appeals
                 ],
                 'detailPanel' => [
@@ -152,6 +164,36 @@ class AdminTaxAppealController extends Controller
                 ]
             ]
         ]);
+    }
+
+    private function getStatusBgColor($status)
+    {
+        $colors = [
+            'filed' => '#DBEAFE', // blue-100
+            'in_review' => '#FEF9C3', // yellow-100
+            'hearing_scheduled' => '#FFEDD5', // orange-100
+            'won' => '#DCFCE7', // green-100
+            'lost' => '#FEE2E2', // red-100
+            'settled' => '#F3E8FF', // purple-100
+            'pending' => '#F1F5F9', // gray-100
+            'draft' => '#F1F5F9', // gray-100
+        ];
+        return $colors[$status] ?? '#F1F5F9';
+    }
+
+    private function getStatusTextColor($status)
+    {
+        $colors = [
+            'filed' => '#1E40AF', // blue-800
+            'in_review' => '#854D0E', // yellow-800
+            'hearing_scheduled' => '#9A3412', // orange-800
+            'won' => '#166534', // green-800
+            'lost' => '#991B1B', // red-800
+            'settled' => '#6B21A8', // purple-800
+            'pending' => '#1E293B', // gray-800
+            'draft' => '#1E293B', // gray-800
+        ];
+        return $colors[$status] ?? '#1E293B';
     }
 
     private function getStatusColor($status)
@@ -192,10 +234,23 @@ class AdminTaxAppealController extends Controller
      */
     public function show($id): JsonResponse
     {
-        $appeal = TaxAppeal::with('property')->findOrFail($id);
+        $appeal = TaxAppeal::with(['property.documents'])->findOrFail($id);
         
-        // In a real scenario, we might also fetch related documents, notes, etc.
-        // For now, we'll return the appeal with property data.
+        // Filter documents for this appeal
+        $documents = $appeal->property && $appeal->property->documents 
+            ? $appeal->property->documents->filter(function($doc) {
+                return in_array($doc->type, ['tax', 'appeal']);
+            })->values()->map(function($doc) {
+                return [
+                    'id' => $doc->id,
+                    'name' => $doc->file_name ?? basename($doc->file_path),
+                    'url' => Storage::url($doc->file_path),
+                    'type' => $doc->type,
+                    'size' => $doc->file_size ? round($doc->file_size / 1024, 2) . ' KB' : 'Unknown',
+                    'created_at' => $doc->created_at->toIso8601String()
+                ];
+            })
+            : [];
         
         return response()->json([
             'success' => true,
@@ -212,9 +267,8 @@ class AdminTaxAppealController extends Controller
                 'outcome' => $appeal->outcome,
                 'savings' => $appeal->savings,
                 'notes' => $appeal->notes,
-                // Add more fields as needed for the detail panel
-                'valuation_history' => [], // Placeholder for historical data
-                'documents' => [], // Placeholder for documents
+                'valuation_history' => [],
+                'documents' => $documents,
             ]
         ]);
     }
@@ -245,21 +299,86 @@ class AdminTaxAppealController extends Controller
     }
 
     /**
-     * Update appeal status/outcome
+     * Update appeal details
      */
     public function update(Request $request, $id): JsonResponse
     {
         $appeal = TaxAppeal::findOrFail($id);
 
         $request->validate([
-            'status' => 'required|in:draft,pending,filed,in_review,hearing_scheduled,won,lost,settled',
+            'status' => 'sometimes|in:draft,pending,filed,in_review,hearing_scheduled,won,lost,settled',
+            'filed_date' => 'nullable|date',
+            'current_assessment' => 'nullable|numeric',
+            'proposed_assessment' => 'nullable|numeric',
+            'hearing_date' => 'nullable|date',
             'outcome' => 'nullable|string',
             'savings' => 'nullable|numeric',
             'notes' => 'nullable|string',
         ]);
 
-        $appeal->update($request->only(['status', 'outcome', 'savings', 'notes']));
+        $appeal->update($request->only([
+            'status', 'filed_date', 'current_assessment', 'proposed_assessment', 
+            'hearing_date', 'outcome', 'savings', 'notes'
+        ]));
 
         return response()->json(['success' => true, 'data' => $appeal]);
+    }
+
+    /**
+     * Upload a document for the tax appeal
+     */
+    public function uploadDocument(Request $request, $id): JsonResponse
+    {
+        $request->validate([
+            'document' => 'required|file|max:10240', // 10MB max
+            'type' => 'nullable|string|in:tax,appeal',
+        ]);
+
+        $appeal = TaxAppeal::findOrFail($id);
+        $file = $request->file('document');
+        
+        $path = $file->store('properties/' . $appeal->property_id . '/documents', 'public');
+
+        $document = PropertyDocument::create([
+            'property_id' => $appeal->property_id,
+            'file_path' => $path,
+            'file_name' => $file->getClientOriginalName(),
+            'file_type' => $file->getClientOriginalExtension(),
+            'file_size' => $file->getSize(),
+            'type' => $request->input('type', 'appeal'),
+            'uploaded_by' => $request->user() ? $request->user()->id : null,
+            'uploaded_at' => now(),
+        ]);
+
+        return response()->json([
+            'success' => true, 
+            'message' => 'Document uploaded successfully',
+            'data' => [
+                'id' => $document->id,
+                'name' => $document->file_name,
+                'url' => Storage::url($document->file_path),
+                'type' => $document->type,
+                'size' => $document->file_size ? round($document->file_size / 1024, 2) . ' KB' : 'Unknown',
+                'created_at' => $document->created_at->toIso8601String()
+            ]
+        ]);
+    }
+
+    /**
+     * Generate an appeal package PDF
+     */
+    public function generatePackage($id)
+    {
+        $appeal = TaxAppeal::with(['property.documents'])->findOrFail($id);
+        
+        $data = [
+            'appeal' => $appeal,
+            'property' => $appeal->property,
+            'generated_at' => now()->format('F j, Y g:i A')
+        ];
+
+        $pdf = Pdf::loadView('pdf.tax-appeal-package', $data);
+        
+        return $pdf->download('tax-appeal-package-' . $appeal->id . '.pdf');
     }
 }

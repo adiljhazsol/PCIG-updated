@@ -23,13 +23,72 @@ class AdminReoController extends Controller
             ->whereYear('updated_at', date('Y'))
             ->count();
 
+        // Build Query
+        $query = Property::where('workflow_stage', 'reo_disposition')
+            ->with(['primaryImage', 'reoProperty', 'reoProperty.offers']);
+
+        // Apply Tab Filter
+        if ($request->has('tab')) {
+            $tab = $request->input('tab');
+            if ($tab === 'for-sale') {
+                $query->whereHas('reoProperty', function($q) {
+                    $q->where('disposition_strategy', 'sale');
+                });
+            } elseif ($tab === 'for-lease') {
+                $query->whereHas('reoProperty', function($q) {
+                    $q->where('disposition_strategy', 'lease');
+                });
+            }
+            // 'all' does not need filtering
+        }
+
+        // Apply Search
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function($q) use ($search) {
+                $q->where('address', 'like', "%{$search}%")
+                  ->orWhere('city', 'like', "%{$search}%")
+                  ->orWhere('zip', 'like', "%{$search}%")
+                  ->orWhere('parcel_id', 'like', "%{$search}%");
+            });
+        }
+
+        // Apply Filters
+        if ($request->filled('status') && $request->input('status') !== 'All') {
+            $status = strtolower(str_replace(' ', '_', $request->input('status')));
+            $query->whereHas('reoProperty', function($q) use ($status) {
+                $q->where('status', $status);
+            });
+        }
+
+        if ($request->filled('type') && $request->input('type') !== 'All') {
+             $strategy = strtolower($request->input('type'));
+             $query->whereHas('reoProperty', function($q) use ($strategy) {
+                $q->where('disposition_strategy', $strategy);
+             });
+        }
+
+        // More Filters
+        if ($request->filled('city')) {
+            $query->where('city', 'like', "%{$request->input('city')}%");
+        }
+        if ($request->filled('min_price')) {
+            $minPrice = $request->input('min_price');
+            $query->whereHas('reoProperty', function($q) use ($minPrice) {
+                $q->where('listed_price', '>=', $minPrice);
+            });
+        }
+        if ($request->filled('max_price')) {
+            $maxPrice = $request->input('max_price');
+            $query->whereHas('reoProperty', function($q) use ($maxPrice) {
+                $q->where('listed_price', '<=', $maxPrice);
+            });
+        }
+
         // Properties
-        $properties = Property::where('workflow_stage', 'reo_disposition')
-            ->with(['primaryImage', 'reoProperty', 'reoProperty.offers'])
-            ->latest()
-            ->limit(20)
-            ->get()
-            ->map(function ($prop) {
+        $properties = $query->latest()
+            ->paginate(50) // Increased from limit(20) to paginate
+            ->through(function ($prop) {
                 $status = $prop->reoProperty->status ?? 'new';
                 $statusColors = [
                     'marketing' => '#3B82F6',
@@ -48,13 +107,13 @@ class AdminReoController extends Controller
                     'city' => $prop->city,
                     'state' => $prop->state,
                     'zip' => $prop->zip,
-                    'status' => $status,
+                    'status' => ucfirst(str_replace('_', ' ', $status)),
                     'statusColor' => $statusColor,
-                    'type' => $prop->reoProperty->disposition_strategy ?? 'TBD',
-                    'strategy' => $prop->reoProperty->disposition_strategy ?? 'TBD',
+                    'type' => ucfirst($prop->reoProperty->disposition_strategy ?? 'TBD'),
+                    'strategy' => ucfirst($prop->reoProperty->disposition_strategy ?? 'TBD'),
                     'price' => '$' . number_format($prop->reoProperty->listed_price ?? 0),
                     'listPrice' => $prop->reoProperty->listed_price ?? 0,
-                    'currentOffer' => $prop->reoProperty && $prop->reoProperty->offers->count() > 0 ? $prop->reoProperty->offers->max('offer_amount') : 0,
+                    'currentOffer' => $prop->reoProperty && $prop->reoProperty->offers->count() > 0 ? '$' . number_format($prop->reoProperty->offers->max('offer_amount')) : '$0',
                     'daysOnMarket' => $prop->reoProperty && $prop->reoProperty->listing_date 
                         ? Carbon::parse($prop->reoProperty->listing_date)->diffInDays(now()) 
                         : 0,
@@ -97,12 +156,121 @@ class AdminReoController extends Controller
                     'moreFilters' => 'More Filters'
                 ],
                 'tableHeaders' => [
-                    'Property', 'Status', 'Strategy', 'List Price', 'Current Offer', 'Days on Market', 'Actions'
+                    '', 'Property', 'Status', 'Strategy', 'List Price', 'Current Offer', 'Days on Market', 'Actions'
                 ],
-                'properties' => $properties,
+                'properties' => $properties->items(),
+                'pagination' => [
+                    'current_page' => $properties->currentPage(),
+                    'last_page' => $properties->lastPage(),
+                    'per_page' => $properties->perPage(),
+                    'total' => $properties->total()
+                ],
                 'selectedProperty' => null
             ]
         ]);
+    }
+
+    public function export(Request $request)
+    {
+        $query = Property::where('workflow_stage', 'reo_disposition')
+            ->with(['reoProperty']);
+
+        // Apply same filters as dashboardData
+        if ($request->has('tab')) {
+            $tab = $request->input('tab');
+            if ($tab === 'for-sale') {
+                $query->whereHas('reoProperty', function($q) { $q->where('disposition_strategy', 'sale'); });
+            } elseif ($tab === 'for-lease') {
+                $query->whereHas('reoProperty', function($q) { $q->where('disposition_strategy', 'lease'); });
+            }
+        }
+        
+        if ($request->filled('status') && $request->input('status') !== 'All') {
+            $status = strtolower(str_replace(' ', '_', $request->input('status')));
+            $query->whereHas('reoProperty', function($q) use ($status) { $q->where('status', $status); });
+        }
+
+        $properties = $query->get();
+        
+        $filename = "reo-disposition-" . date('Y-m-d') . ".csv";
+        $headers = [
+            "Content-Type" => "text/csv",
+            "Content-Disposition" => "attachment; filename=\"$filename\"",
+            "Pragma" => "no-cache",
+            "Cache-Control" => "must-revalidate, post-check=0, pre-check=0",
+            "Expires" => "0"
+        ];
+
+        $callback = function() use ($properties) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, ['Property Address', 'City', 'State', 'Zip', 'Status', 'Strategy', 'List Price', 'Listing Agent']);
+
+            foreach ($properties as $prop) {
+                fputcsv($file, [
+                    $prop->address,
+                    $prop->city,
+                    $prop->state,
+                    $prop->zip,
+                    $prop->reoProperty->status ?? 'New',
+                    $prop->reoProperty->disposition_strategy ?? 'TBD',
+                    $prop->reoProperty->listed_price ?? 0,
+                    $prop->reoProperty->listing_agent ?? 'Unassigned'
+                ]);
+            }
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    public function allProperties(): JsonResponse
+    {
+        $properties = Property::select('id', 'address', 'city', 'zip_code', 'workflow_stage')
+            ->orderBy('address')
+            ->get()
+            ->map(function ($property) {
+                return [
+                    'id' => $property->id,
+                    'address' => $property->address . ', ' . $property->city . ' ' . $property->zip_code . ' (' . ucfirst(str_replace('_', ' ', $property->workflow_stage)) . ')',
+                ];
+            });
+
+        return response()->json($properties);
+    }
+
+    public function listProperty(Request $request)
+    {
+        $validated = $request->validate([
+            'id' => 'required|exists:properties,id',
+            'listed_price' => 'required|numeric',
+            'listing_date' => 'required|date',
+            'listing_agent' => 'required|string',
+            'disposition_strategy' => 'required|in:sale,lease'
+        ]);
+
+        $property = Property::findOrFail($validated['id']);
+        
+        // Update workflow stage to REO Disposition if not already
+        if ($property->workflow_stage !== 'reo_disposition') {
+            $property->workflow_stage = 'reo_disposition';
+            $property->save();
+        }
+
+        $reoProperty = $property->reoProperty;
+        if (!$reoProperty) {
+            $reoProperty = new \App\Models\ReoProperty();
+            $reoProperty->property_id = $property->id;
+        }
+        
+        $reoProperty->listed_price = $validated['listed_price'];
+        $reoProperty->listing_date = $validated['listing_date'];
+        $reoProperty->listing_agent = $validated['listing_agent'];
+        $reoProperty->disposition_strategy = $validated['disposition_strategy'];
+        $reoProperty->status = 'marketing';
+        $reoProperty->save();
+
+        return response()->json(['message' => 'Property listed successfully']);
     }
 
     public function properties(Request $request): JsonResponse

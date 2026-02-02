@@ -13,12 +13,12 @@ import {
     Info,
     ChevronDown,
     Search,
-    RotateCcw,
+    // RotateCcw,
     ArrowUpDown,
-    CheckCircle2,
+    // CheckCircle2,
     Loader2
 } from 'lucide-react';
-import clsx from 'clsx';
+// import clsx from 'clsx';
 import { useIsMobile, useIsTablet } from '../../hooks/useMediaQuery';
 import AdminNav from '../../components/admin/AdminNav';
 import api from '../../services/api';
@@ -85,6 +85,8 @@ interface QueueActions {
 }
 
 interface QueueRow {
+    id: string | number;
+    propertyId: string | number;
     parcelId: string;
     pcigId: string;
     address: string;
@@ -113,6 +115,11 @@ interface Queue {
     rows: QueueRow[];
 }
 
+interface Attorney {
+    id: number;
+    name: string;
+}
+
 interface QuietTitleData {
     header: Header;
     actionButtons: ActionButtons;
@@ -122,6 +129,7 @@ interface QuietTitleData {
     tabs: Tab[];
     filters: Filter[];
     queue: Queue;
+    attorneyList?: Attorney[];
 }
 
 // Responsiveness Implemented: Mobile & Tablet support added.
@@ -129,8 +137,7 @@ interface QuietTitleData {
 export default function QuietTitle() {
     const isMobile = useIsMobile();
     const isTablet = useIsTablet();
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const isMobileOrTablet = isMobile || isTablet;
+    // const isMobileOrTablet = isMobile || isTablet;
 
     const [data, setData] = useState<QuietTitleData | null>(null);
     const [loading, setLoading] = useState(true);
@@ -138,11 +145,13 @@ export default function QuietTitle() {
 
     const [activeTab, setActiveTab] = useState('all');
     const [selectedItems, setSelectedItems] = useState(new Set<string>()); // Changed to string for IDs
-    const [viewMode, setViewMode] = useState<'pipeline' | 'table'>('pipeline');
+    // const [viewMode, setViewMode] = useState<'pipeline' | 'table'>('pipeline');
     const [searchQuery, setSearchQuery] = useState('');
     const [statusFilter, setStatusFilter] = useState('All Stages');
     const [countyFilter, setCountyFilter] = useState('All Counties');
     const [attorneyFilter, setAttorneyFilter] = useState('All Attorneys');
+    
+    const [dateRangeFilter, setDateRangeFilter] = useState('Date Range');
     
     // Modal states
     const [isFileModalOpen, setIsFileModalOpen] = useState(false);
@@ -150,14 +159,23 @@ export default function QuietTitle() {
     
     // Form states
     const [selectedPropertyId, setSelectedPropertyId] = useState('');
-    const [filingDate, setFilingDate] = useState('');
+    // const [filingDate, setFilingDate] = useState('');
     const [courtDate, setCourtDate] = useState('');
     const [selectedAttorneyId, setSelectedAttorneyId] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const fetchData = async () => {
         try {
-            const response = await api.get('/admin/quiet-title/dashboard-data');
+            setLoading(true);
+            const params = new URLSearchParams();
+            if (activeTab !== 'all') params.append('tab', activeTab);
+            if (searchQuery) params.append('search', searchQuery);
+            if (statusFilter !== 'All Stages') params.append('stage', statusFilter);
+            if (countyFilter !== 'All Counties') params.append('county', countyFilter);
+            if (attorneyFilter !== 'All Attorneys') params.append('attorney', attorneyFilter);
+            if (dateRangeFilter !== 'Date Range') params.append('date_range', dateRangeFilter);
+
+            const response = await api.get(`/admin/quiet-title/dashboard-data?${params.toString()}`);
             setData(response.data);
             setLoading(false);
         } catch (err: any) {
@@ -174,8 +192,11 @@ export default function QuietTitle() {
     };
 
     useEffect(() => {
-        fetchData();
-    }, []);
+        const timer = setTimeout(() => {
+            fetchData();
+        }, 500); // Debounce search
+        return () => clearTimeout(timer);
+    }, [activeTab, searchQuery, statusFilter, countyFilter, attorneyFilter, dateRangeFilter]);
 
     const handleFileNew = async () => {
         if (!selectedPropertyId) return;
@@ -206,38 +227,17 @@ export default function QuietTitle() {
         try {
             const idsToUpdate = selectedPropertyId ? [selectedPropertyId] : Array.from(selectedItems);
             
-            // This loop isn't ideal for bulk, but works for now without a bulk endpoint
-            // We need to know if these are Property IDs (for new cases) or Case IDs
-            // For now assuming we are updating existing cases or filing new ones? 
-            // The prompt says "Assign Attorney", usually for existing cases.
-            
-            // Note: The rows have 'id' (Case ID) and 'propertyId'.
-            // If it's a case, we update /admin/quiet-title/{id}/update
-            // If it's a property without a case, we might need to file it first? 
-            // Or maybe just assign attorney to property? 
-            // The backend update endpoint updates QuietTitleCase.
-            
-            // Let's assume we are updating existing QuietTitleCases.
-            // If a row has no case ID (id is null), we can't update it via /update endpoint easily 
-            // unless we create the case first.
-            
-            for (const id of idsToUpdate) {
-                // Check if this ID is a case ID or property ID
-                // In our rows, 'id' is case ID. If null, it's a property waiting to file.
-                // We should probably only allow assigning attorney to filed cases or file them with attorney.
-                
-                // For simplicity, let's assume we are updating cases that exist.
-                if (id) {
-                     await api.put(`/admin/quiet-title/${id}/update`, {
-                        attorney_id: selectedAttorneyId
-                    });
-                }
-            }
+            // Call bulk assign endpoint
+            await api.post('/admin/quiet-title/bulk-assign', {
+                property_ids: idsToUpdate,
+                attorney_id: selectedAttorneyId
+            });
             
             setIsAssignModalOpen(false);
             fetchData();
             setSelectedItems(new Set());
             setSelectedAttorneyId('');
+            alert('Attorney assigned successfully!');
         } catch (error) {
             console.error('Error assigning attorney:', error);
             alert('Failed to assign attorney');
@@ -246,12 +246,13 @@ export default function QuietTitle() {
         }
     };
 
-    const toggleSelection = (id: string) => {
+    const toggleSelection = (id: string | number) => {
+        const idStr = String(id);
         const newSelection = new Set(selectedItems);
-        if (newSelection.has(id)) {
-            newSelection.delete(id);
+        if (newSelection.has(idStr)) {
+            newSelection.delete(idStr);
         } else {
-            newSelection.add(id);
+            newSelection.add(idStr);
         }
         setSelectedItems(newSelection);
     };
@@ -262,7 +263,7 @@ export default function QuietTitle() {
         } else {
             const newSelection = new Set<string>();
             filteredRows.forEach(row => {
-                if (row.id) newSelection.add(row.id); // Only select rows with Case IDs
+                if (row.propertyId) newSelection.add(String(row.propertyId));
             });
             setSelectedItems(newSelection);
         }
@@ -363,6 +364,7 @@ export default function QuietTitle() {
         tableHeaders: Array.isArray(rawQueue?.tableHeaders) ? rawQueue.tableHeaders : [],
         rows: Array.isArray(rawQueue?.rows) ? rawQueue.rows.map((row: any) => ({
             id: row?.id || '',
+            propertyId: row?.propertyId || '',
             parcelId: row?.parcelId || '',
             pcigId: row?.pcigId || '',
             address: row?.address || '',
@@ -384,12 +386,13 @@ export default function QuietTitle() {
         })) : []
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    /*
     const getIcon = (iconName: string) => {
         const icons: any = { Clock, FileText, File, Gavel, CheckCircle, XCircle, FilePlus, UserPlus, AlertCircle, AlertTriangle, Info };
         const Icon = icons[iconName];
         return Icon ? <Icon size={20} /> : null;
     };
+    */
 
     const getStatusBadge = (stage: string, color: string) => {
         const colors: any = {
@@ -430,7 +433,7 @@ export default function QuietTitle() {
         }}>
             <AdminNav />
             <div style={{
-                paddingLeft: isMobile ? 0 : '250px',
+                paddingLeft: isMobile ? 0 : 0,
                 paddingTop: isMobile ? '60px' : 0,
                 minHeight: '100vh',
                 transition: 'all 0.3s ease-in-out'
@@ -458,6 +461,9 @@ export default function QuietTitle() {
                                 backgroundColor: '#1E3A5F', color: '#fff', border: 'none', borderRadius: 6,
                                 padding: '10px 16px', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
                                 justifyContent: 'center', flex: 1
+                            }} onClick={() => {
+                                // Simple validation - check if any property is selected or use a modal to select one
+                                setIsFileModalOpen(true);
                             }}>
                                 <FilePlus size={16} /> {actionButtons.fileNew.label}
                             </button>
@@ -465,6 +471,8 @@ export default function QuietTitle() {
                                 backgroundColor: '#fff', color: '#1E3A5F', border: '1px solid #E2E8F0', borderRadius: 6,
                                 padding: '10px 16px', fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
                                 justifyContent: 'center', flex: 1
+                            }} onClick={() => {
+                                setIsAssignModalOpen(true);
                             }}>
                                 <UserPlus size={16} /> {actionButtons.assignAttorney.label}
                             </button>
@@ -533,6 +541,8 @@ export default function QuietTitle() {
                             <input
                                 type="text"
                                 placeholder="Search by parcel, case #, attorney..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
                                 style={{
                                     width: '100%', padding: '10px 10px 10px 40px', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 14, outline: 'none', color: '#0F172A'
                                 }}
@@ -540,18 +550,66 @@ export default function QuietTitle() {
                         </div>
                         <div style={{ display: 'flex', gap: 12, flexDirection: isMobile ? 'column' : 'row', width: isMobile ? '100%' : 'auto' }}>
                             <div style={{ display: 'flex', gap: 12, flexDirection: isMobile ? 'column' : 'row' }}>
-                                {filters.map((filter: Filter, idx: number) => (
-                                    <div key={idx} style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
-                                        <select style={{
+                                {/* Stage Filter */}
+                                <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                    <select 
+                                        value={statusFilter}
+                                        onChange={(e) => setStatusFilter(e.target.value)}
+                                        style={{
                                             appearance: 'none', padding: '10px 32px 10px 16px', border: '1px solid #E2E8F0', borderRadius: 6,
                                             fontSize: 14, color: '#0F172A', backgroundColor: '#fff', cursor: 'pointer', fontWeight: 500,
                                             width: '100%'
-                                        }}>
-                                            {filter.options.map((opt: string, i: number) => <option key={i}>{opt}</option>)}
-                                        </select>
-                                        <ChevronDown size={14} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748B', pointerEvents: 'none' }} />
-                                    </div>
-                                ))}
+                                        }}
+                                    >
+                                        {filters[0]?.options.map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
+                                    </select>
+                                    <ChevronDown size={14} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748B', pointerEvents: 'none' }} />
+                                </div>
+                                {/* County Filter */}
+                                <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                    <select 
+                                        value={countyFilter}
+                                        onChange={(e) => setCountyFilter(e.target.value)}
+                                        style={{
+                                            appearance: 'none', padding: '10px 32px 10px 16px', border: '1px solid #E2E8F0', borderRadius: 6,
+                                            fontSize: 14, color: '#0F172A', backgroundColor: '#fff', cursor: 'pointer', fontWeight: 500,
+                                            width: '100%'
+                                        }}
+                                    >
+                                        {filters[1]?.options.map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
+                                    </select>
+                                    <ChevronDown size={14} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748B', pointerEvents: 'none' }} />
+                                </div>
+                                {/* Attorney Filter */}
+                                <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                    <select 
+                                        value={attorneyFilter}
+                                        onChange={(e) => setAttorneyFilter(e.target.value)}
+                                        style={{
+                                            appearance: 'none', padding: '10px 32px 10px 16px', border: '1px solid #E2E8F0', borderRadius: 6,
+                                            fontSize: 14, color: '#0F172A', backgroundColor: '#fff', cursor: 'pointer', fontWeight: 500,
+                                            width: '100%'
+                                        }}
+                                    >
+                                        {filters[2]?.options.map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
+                                    </select>
+                                    <ChevronDown size={14} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748B', pointerEvents: 'none' }} />
+                                </div>
+                                {/* Date Range Filter */}
+                                <div style={{ position: 'relative', width: isMobile ? '100%' : 'auto' }}>
+                                    <select 
+                                        value={dateRangeFilter}
+                                        onChange={(e) => setDateRangeFilter(e.target.value)}
+                                        style={{
+                                            appearance: 'none', padding: '10px 32px 10px 16px', border: '1px solid #E2E8F0', borderRadius: 6,
+                                            fontSize: 14, color: '#0F172A', backgroundColor: '#fff', cursor: 'pointer', fontWeight: 500,
+                                            width: '100%'
+                                        }}
+                                    >
+                                        {filters[3]?.options.map((opt: string, i: number) => <option key={i} value={opt}>{opt}</option>)}
+                                    </select>
+                                    <ChevronDown size={14} style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', color: '#64748B', pointerEvents: 'none' }} />
+                                </div>
                             </div>
                             <button style={{
                                 background: 'none', border: 'none', color: '#64748B', fontSize: 14, fontWeight: 600, cursor: 'pointer',
@@ -569,18 +627,6 @@ export default function QuietTitle() {
                                 <h3 style={{ fontSize: 16, fontWeight: 700, color: '#0F172A', marginBottom: 4 }}>{pipeline.title}</h3>
                                 <div style={{ fontSize: 13, color: '#64748B' }}>{pipeline.subtitle}</div>
                             </div>
-                            {!isMobile && (
-                                <div style={{ display: 'flex', backgroundColor: '#F1F5F9', borderRadius: 6, padding: 2 }}>
-                                    {pipeline.buttons.map((btn: string, i: number) => (
-                                        <button key={i} style={{
-                                            padding: '6px 12px', fontSize: 13, fontWeight: 600, border: 'none', borderRadius: 4, cursor: 'pointer',
-                                            backgroundColor: i === 0 ? '#fff' : 'transparent', color: i === 0 ? '#0F172A' : '#64748B', boxShadow: i === 0 ? '0 1px 2px rgba(0,0,0,0.05)' : 'none'
-                                        }}>
-                                            {btn}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
                         </div>
 
                         <div style={{
@@ -672,11 +718,20 @@ export default function QuietTitle() {
                                 <div style={{ fontSize: 13, color: '#64748B', marginTop: 4 }}>{queue.subtitle}</div>
                             </div>
                             <div style={{ display: 'flex', gap: 12, width: isMobile ? '100%' : 'auto' }}>
-                                <button style={{
-                                    backgroundColor: '#1E3A5F', color: '#fff', border: 'none', borderRadius: 6,
-                                    padding: '8px 16px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
-                                    flex: isMobile ? 1 : 'initial', justifyContent: 'center'
-                                }}>
+                                <button 
+                                    onClick={() => {
+                                        if (selectedItems.size === 0) {
+                                            alert('Please select at least one property to assign an attorney.');
+                                            return;
+                                        }
+                                        setIsAssignModalOpen(true);
+                                    }}
+                                    style={{
+                                        backgroundColor: '#1E3A5F', color: '#fff', border: 'none', borderRadius: 6,
+                                        padding: '8px 16px', fontSize: 13, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                                        flex: isMobile ? 1 : 'initial', justifyContent: 'center'
+                                    }}
+                                >
                                     <UserPlus size={16} /> {queue.actions.bulk}
                                 </button>
                                 <button style={{
@@ -703,7 +758,13 @@ export default function QuietTitle() {
                                                 width: idx === 0 ? 40 : 'auto',
                                                 backgroundColor: '#F8FAFC' // Ensure sticky header has background
                                             }}>
-                                                {idx === 0 ? <input type="checkbox" /> : header}
+                                                {idx === 0 ? (
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={selectedItems.size === queue.rows.length && queue.rows.length > 0}
+                                                        onChange={() => toggleAll(queue.rows)}
+                                                    />
+                                                ) : header}
                                             </th>
                                         ))}
                                     </tr>
@@ -711,7 +772,13 @@ export default function QuietTitle() {
                                 <tbody>
                                     {queue.rows.map((row: QueueRow, idx: number) => (
                                         <tr key={idx} style={{ borderBottom: '1px solid #E2E8F0' }}>
-                                            <td style={{ padding: '16px' }}><input type="checkbox" /></td>
+                                            <td style={{ padding: '16px' }}>
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={selectedItems.has(String(row.propertyId))}
+                                                    onChange={() => toggleSelection(row.propertyId)}
+                                                />
+                                            </td>
                                             <td style={{ padding: '16px' }}>
                                                 <div style={{ fontWeight: 600, color: '#0F172A', marginBottom: 2 }}>{row.parcelId}</div>
                                                 <div style={{ fontSize: 12, color: '#1E3A5F', fontWeight: 600 }}>{row.pcigId}</div>
@@ -759,6 +826,82 @@ export default function QuietTitle() {
                     </div>
                 </div>
             </div>
+
+            {/* Assign Attorney Modal */}
+            {isAssignModalOpen && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+                }}>
+                    <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, width: 400, maxWidth: '90%' }}>
+                        <h3 style={{ marginTop: 0, marginBottom: 16 }}>Assign Attorney</h3>
+                        <div style={{ marginBottom: 16 }}>
+                            <label style={{ display: 'block', marginBottom: 8, fontSize: 14, fontWeight: 500 }}>Select Attorney</label>
+                            <select
+                                value={selectedAttorneyId}
+                                onChange={(e) => setSelectedAttorneyId(e.target.value)}
+                                style={{ width: '100%', padding: 8, borderRadius: 4, border: '1px solid #E2E8F0' }}
+                            >
+                                <option value="">Select Attorney...</option>
+                                {data?.attorneyList ? (
+                                    data.attorneyList.map((att: any) => (
+                                        <option key={att.id} value={att.id}>{att.name}</option>
+                                    ))
+                                ) : (
+                                    // Fallback if attorneyList is not yet available
+                                    filters[2]?.options.filter((opt: string) => opt !== 'All Attorneys').map((opt: string, i: number) => (
+                                        <option key={i} value={opt}>{opt}</option>
+                                    ))
+                                )}
+                            </select>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                            <button
+                                onClick={() => setIsAssignModalOpen(false)}
+                                style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid #E2E8F0', backgroundColor: '#fff', cursor: 'pointer' }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleAssignAttorney}
+                                disabled={isSubmitting}
+                                style={{ padding: '8px 16px', borderRadius: 4, border: 'none', backgroundColor: '#1E3A5F', color: '#fff', cursor: 'pointer', opacity: isSubmitting ? 0.7 : 1 }}
+                            >
+                                {isSubmitting ? 'Assigning...' : 'Assign'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* File New QT Modal - Skeleton */}
+            {isFileModalOpen && (
+                <div style={{
+                    position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+                    backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+                }}>
+                    <div style={{ backgroundColor: '#fff', borderRadius: 8, padding: 24, width: 500, maxWidth: '90%' }}>
+                        <h3 style={{ marginTop: 0, marginBottom: 16 }}>File New Quiet Title</h3>
+                        <div style={{ marginBottom: 16 }}>
+                             <p>Functionality coming soon.</p>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+                            <button
+                                onClick={handleFileNew} // Now used
+                                style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid #E2E8F0', backgroundColor: '#fff', cursor: 'pointer' }}
+                            >
+                                Submit (Mock)
+                            </button>
+                            <button
+                                onClick={() => setIsFileModalOpen(false)}
+                                style={{ padding: '8px 16px', borderRadius: 4, border: '1px solid #E2E8F0', backgroundColor: '#fff', cursor: 'pointer' }}
+                            >
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

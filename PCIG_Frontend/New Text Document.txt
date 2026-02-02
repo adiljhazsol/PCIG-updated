@@ -1,0 +1,300 @@
+You are working in the PCIG_Backend Laravel API.
+
+GOAL (4F-2)
+Add relationships to ShareListing and ShareTransaction models, then create ShareMarketplaceController.
+
+### 1. Add relationships to ShareListing model
+
+1) Open app/Models/ShareListing.php
+
+2) At the top, add:
+- use App\Models\User;
+- use App\Models\Property;
+- use App\Models\ShareTransaction;
+
+3) Before the closing brace, add:
+
+public function seller()
+{
+    return $this->belongsTo(User::class, 'seller_id');
+}
+
+public function property()
+{
+    return $this->belongsTo(Property::class);
+}
+
+public function transactions()
+{
+    return $this->hasMany(ShareTransaction::class, 'listing_id');
+}
+
+### 2. Add relationships to ShareTransaction model
+
+1) Open app/Models/ShareTransaction.php
+
+2) At the top, add:
+- use App\Models\User;
+- use App\Models\ShareListing;
+
+3) Before the closing brace, add:
+
+public function listing()
+{
+    return $this->belongsTo(ShareListing::class, 'listing_id');
+}
+
+public function buyer()
+{
+    return $this->belongsTo(User::class, 'buyer_id');
+}
+
+public function seller()
+{
+    return $this->belongsTo(User::class, 'seller_id');
+}
+
+### 3. Create ShareMarketplaceController
+
+1) Run:
+- php artisan make:controller Api/Investor/ShareMarketplaceController
+
+2) Open app/Http/Controllers/Api/Investor/ShareMarketplaceController.php
+
+3) Replace entire file with:
+
+<?php
+
+namespace App\Http\Controllers\Api\Investor;
+
+use App\Http\Controllers\Controller;
+use App\Models\ShareListing;
+use App\Models\ShareTransaction;
+use App\Models\Investment;
+use App\Models\Transaction;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+class ShareMarketplaceController extends Controller
+{
+    public function available(Request $request): JsonResponse
+    {
+        $query = ShareListing::where('status', 'active')
+            ->with(['seller', 'property']);
+
+        if ($request->has('property_id')) {
+            $query->where('property_id', $request->property_id);
+        }
+
+        $sortBy = $request->get('sort_by', 'created_at');
+        $sortOrder = $request->get('sort_order', 'desc');
+        $query->orderBy($sortBy, $sortOrder);
+
+        $perPage = $request->get('per_page', 20);
+        $listings = $query->paginate($perPage);
+
+        return response()->json([
+            'success' => true,
+            'data' => $listings->items(),
+            'meta' => [
+                'current_page' => $listings->currentPage(),
+                'last_page' => $listings->lastPage(),
+                'per_page' => $listings->perPage(),
+                'total' => $listings->total(),
+            ],
+        ]);
+    }
+
+    public function list(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $request->validate([
+            'property_id' => 'required|exists:properties,id',
+            'shares' => 'required|integer|min:1',
+            'price_per_share' => 'required|numeric|min:0.01',
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        // Verify seller owns shares
+        $investment = Investment::where('user_id', $user->id)
+            ->where('property_id', $request->property_id)
+            ->where('status', 'active')
+            ->first();
+
+        if (!$investment || $investment->shares < $request->shares) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You do not have enough shares to list',
+            ], 400);
+        }
+
+        $totalPrice = $request->shares * $request->price_per_share;
+
+        $listing = ShareListing::create([
+            'seller_id' => $user->id,
+            'property_id' => $request->property_id,
+            'shares' => $request->shares,
+            'price_per_share' => $request->price_per_share,
+            'total_price' => $totalPrice,
+            'status' => 'active',
+            'notes' => $request->notes,
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Shares listed successfully',
+            'data' => $listing->load(['property', 'seller']),
+        ], 201);
+    }
+
+    public function buy(Request $request, $id): JsonResponse
+    {
+        $buyer = $request->user();
+        $listing = ShareListing::where('status', 'active')->findOrFail($id);
+
+        if ($listing->seller_id === $buyer->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'You cannot buy your own listing',
+            ], 400);
+        }
+
+        DB::beginTransaction();
+        try {
+            // Create share transaction
+            $shareTransaction = ShareTransaction::create([
+                'listing_id' => $listing->id,
+                'buyer_id' => $buyer->id,
+                'seller_id' => $listing->seller_id,
+                'shares' => $listing->shares,
+                'total_price' => $listing->total_price,
+                'transaction_date' => now(),
+                'status' => 'pending',
+            ]);
+
+            // Transfer shares from seller to buyer
+            $sellerInvestment = Investment::where('user_id', $listing->seller_id)
+                ->where('property_id', $listing->property_id)
+                ->where('status', 'active')
+                ->first();
+
+            if (!$sellerInvestment || $sellerInvestment->shares < $listing->shares) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Seller no longer has sufficient shares',
+                ], 400);
+            }
+
+            // Update seller's investment
+            $sellerInvestment->shares -= $listing->shares;
+            if ($sellerInvestment->shares <= 0) {
+                $sellerInvestment->update(['status' => 'sold']);
+            } else {
+                $sellerInvestment->save();
+            }
+
+            // Create or update buyer's investment
+            $buyerInvestment = Investment::firstOrCreate(
+                [
+                    'user_id' => $buyer->id,
+                    'property_id' => $listing->property_id,
+                    'status' => 'active',
+                ],
+                [
+                    'shares' => 0,
+                    'amount' => 0,
+                    'price_per_share' => $listing->price_per_share,
+                    'purchase_date' => now(),
+                ]
+            );
+
+            $buyerInvestment->shares += $listing->shares;
+            $buyerInvestment->amount += $listing->total_price;
+            $buyerInvestment->save();
+
+            // Update listing status
+            $listing->update(['status' => 'sold']);
+
+            // Create transaction records
+            Transaction::create([
+                'user_id' => $buyer->id,
+                'type' => 'purchase',
+                'amount' => $listing->total_price,
+                'property_id' => $listing->property_id,
+                'description' => "Purchased {$listing->shares} shares from marketplace",
+                'status' => 'completed',
+                'reference_number' => 'SHARE-BUY-' . str_pad($shareTransaction->id, 8, '0', STR_PAD_LEFT),
+            ]);
+
+            Transaction::create([
+                'user_id' => $listing->seller_id,
+                'type' => 'sale',
+                'amount' => $listing->total_price,
+                'property_id' => $listing->property_id,
+                'description' => "Sold {$listing->shares} shares via marketplace",
+                'status' => 'completed',
+                'reference_number' => 'SHARE-SELL-' . str_pad($shareTransaction->id, 8, '0', STR_PAD_LEFT),
+            ]);
+
+            // Complete share transaction
+            $shareTransaction->update(['status' => 'completed']);
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Shares purchased successfully',
+                'data' => $shareTransaction->load(['listing', 'buyer', 'seller']),
+            ]);
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Purchase failed: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function cancel(Request $request, $id): JsonResponse
+    {
+        $user = $request->user();
+        $listing = ShareListing::where('seller_id', $user->id)
+            ->where('status', 'active')
+            ->findOrFail($id);
+
+        $listing->update(['status' => 'cancelled']);
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Listing cancelled successfully',
+        ]);
+    }
+}
+
+### 4. Add routes
+
+1) Open routes/api.php
+
+2) In investor routes group, add:
+- Route::get('/shares/available', [App\Http\Controllers\Api\Investor\ShareMarketplaceController::class, 'available']);
+- Route::post('/shares/list', [App\Http\Controllers\Api\Investor\ShareMarketplaceController::class, 'list']);
+- Route::post('/shares/buy/{id}', [App\Http\Controllers\Api\Investor\ShareMarketplaceController::class, 'buy']);
+- Route::delete('/shares/listing/{id}', [App\Http\Controllers\Api\Investor\ShareMarketplaceController::class, 'cancel']);
+
+### 5. Test
+
+1) Test GET /api/investor/shares/available
+2) Test POST /api/investor/shares/list
+3) Test POST /api/investor/shares/buy/{id}
+4) Test DELETE /api/investor/shares/listing/{id}
+
+### 6. Report
+
+Confirm:
+- Relationships added
+- ShareMarketplaceController created
+- Routes added
+- Share listing and purchase flow works
+- No errors

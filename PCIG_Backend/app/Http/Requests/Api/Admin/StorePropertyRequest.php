@@ -20,10 +20,11 @@ class StorePropertyRequest extends FormRequest
             'county' => 'nullable|string|max:100',
             'state' => 'nullable|string|size:2',
             'zip_code' => 'nullable|string|max:10',
-            'status' => 'nullable|in:active,pending,redeemed,barment,quiet_title,sheriff_sale,reo,sold,leased',
+            'status' => 'nullable|in:active,pending,redeemed,barment,quiet_title,sheriff_sale,reo,sold,leased,archived',
             'workflow_stage' => 'nullable|in:research,tax_appeal,fifa_import,fifa_processing,sheriff,redemption,barment,quiet_title,auction,reo_disposition,reo_leased,completed,surplus',
             'purchase_price' => 'nullable|numeric|min:0',
             'current_value' => 'nullable|numeric|min:0',
+            'assessed_value' => 'nullable|numeric|min:0',
             'roi' => 'nullable|numeric',
             'total_shares' => 'nullable|integer|min:0',
             'available_shares' => 'nullable|integer|min:0',
@@ -31,6 +32,10 @@ class StorePropertyRequest extends FormRequest
             'purchase_date' => 'nullable|date',
             'redemption_deadline' => 'nullable|date',
             'description' => 'nullable|string',
+            'legal_description' => 'nullable|string',
+            'zoning' => 'nullable|string|max:100',
+            'lot_size' => 'nullable|string|max:100',
+            'year_built' => 'nullable|string|max:4',
         ];
     }
 }
