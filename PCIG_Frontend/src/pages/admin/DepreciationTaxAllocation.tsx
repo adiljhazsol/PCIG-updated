@@ -35,7 +35,7 @@ export default function DepreciationTaxAllocation() {
     const [yearFilter, setYearFilter] = useState(new Date().getFullYear().toString());
     const [assetTypeFilter, setAssetTypeFilter] = useState('All Assets');
     
-    const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const fetchData = async (query = searchQuery, year = yearFilter, assetType = assetTypeFilter, tab = activeTab) => {
         try {
@@ -96,28 +96,6 @@ export default function DepreciationTaxAllocation() {
         const icons: any = { TrendingDown, Home, Users, AlertCircle };
         const Icon = icons[iconName];
         return Icon ? <Icon size={20} /> : null;
-    };
-
-    const getStatusBadge = (status: string, color: string) => {
-        const colors: any = {
-            'green': { bg: '#ECFDF5', text: '#059669' },
-            'orange': { bg: '#FFF7ED', text: '#F59E0B' },
-            'gray': { bg: '#F1F5F9', text: '#64748B' }
-        };
-        const style = colors[color] || colors['gray'];
-        return (
-            <span style={{
-                backgroundColor: style.bg,
-                color: style.text,
-                padding: '4px 10px',
-                borderRadius: '12px',
-                fontSize: 12,
-                fontWeight: 500,
-                display: 'inline-block'
-            }}>
-                {status}
-            </span>
-        );
     };
 
     const getMethodBadge = (method: string, color: string) => {

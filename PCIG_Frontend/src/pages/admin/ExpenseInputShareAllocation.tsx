@@ -81,11 +81,6 @@ interface ExpenseTable {
   rows: ExpenseRow[];
 }
 
-interface DetailField {
-  label?: string; // Optional because some fields might just be values or objects in the original JSON structure, but usually have labels
-  value: string | any; // value can be complex object based on original code usage (e.g. icon object)
-}
-
 interface ExpenseDetailPanel {
   expenseInformation: {
     editIcon: string;
@@ -148,7 +143,7 @@ export default function ExpenseInputShareAllocation() {
   const [categoryFilter, setCategoryFilter] = useState('All Categories');
   const [statusFilter, setStatusFilter] = useState('All Status');
   
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchData = async (query = searchQuery, property = propertyFilter, category = categoryFilter, status = statusFilter) => {
     try {
@@ -374,17 +369,12 @@ export default function ExpenseInputShareAllocation() {
   const NewExpenseIcon = iconMap[header?.actionButtons?.[1]?.icon || ''] || Plus;
   const EditIcon = iconMap[detailPanel?.expenseInformation?.editIcon || ''] || Edit;
   
-  const field7 = detailPanel?.expenseInformation?.fields?.[7];
-  const downloadIconName = (typeof field7?.value === 'object' && field7?.value?.icon) ? field7.value.icon : '';
-  const DownloadIcon = iconMap[downloadIconName] || Download;
-
   const field0 = detailPanel?.expenseInformation?.fields?.[0];
   const homeIconName = (typeof field0?.value === 'object' && field0?.value?.icon) ? field0.value.icon : '';
   const HomeIcon = iconMap[homeIconName] || Home;
 
   const CheckIcon = iconMap[detailPanel?.actions?.approve?.icon || ''] || Check;
   const RejectIcon = iconMap[detailPanel?.actions?.reject?.icon || ''] || X;
-  const NotifyIcon = iconMap['Bell'] || Bell;
 
   return (
     <div style={pageWrapperStyle}>
@@ -809,7 +799,7 @@ export default function ExpenseInputShareAllocation() {
                 
                 // Determine current value and setter based on filter label
                 let currentValue = filter.value;
-                let onChangeHandler = (e: React.ChangeEvent<HTMLSelectElement>) => {};
+                let onChangeHandler = (_e: React.ChangeEvent<HTMLSelectElement>) => {};
                 
                 if (filter.label === 'Property') {
                   currentValue = propertyFilter;
